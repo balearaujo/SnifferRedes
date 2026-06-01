@@ -6,32 +6,33 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <pcap.h>
+#include <stdint.h>
 
 struct ip_header {
-    u_char  ip_hl:4, ip_v:4; // cabezera y version
-    u_char  ip_tos;          // typee of service
-    u_short ip_len;          // longitud
-    u_short ip_id;           // id del paquete
-    u_short ip_off;          // fragmentacion n del paquete
-    u_char  ip_ttl;          // tiempo de vida del paquete
-    u_char  ip_p;            // protocolo del paq quete
-    u_short ip_sum;          // checksum (es para verfiicar la integridad de los datos creo)
+    uint8_t  ip_v_hl; // cabezera y version
+    uint8_t  ip_tos;          // typee of service
+    uint16_t ip_len;          // longitud
+    uint16_t ip_id;           // id del paquete
+    uint16_t ip_off;          // fragmentacion n del paquete
+    uint8_t  ip_ttl;          // tiempo de vida del paquete
+    uint8_t  ip_p;            // protocolo del paq quete
+    uint16_t ip_sum;          // checksum (es para verfiicar la integridad de los datos creo)
     struct  in_addr ip_src;  // ip origen
     struct  in_addr ip_dst;  // ip destino
-};
+} __attribute__((packed));
 
 struct tcp_header {          // para tcp
-    u_short th_sport;        // puerto origen
-    u_short th_dport;        // puerto destino
-    u_int   th_seq;          // num secuencia
-    u_int   th_ack;          // num ACK
-    u_char  th_off:4, th_x2:4; // offset de Data ( multi *4 da el tamaño de la cabecera)
-    u_char  th_flags;        // flags 
-    u_short th_win;          
-    u_short th_sum;          
-    u_short th_urp;
+    uint16_t th_sport;        // puerto origen
+    uint16_t th_dport;        // puerto destino
+    uint32_t   th_seq;          // num secuencia
+    uint32_t   th_ack;          // num ACK
+    uint8_t  th_off_x2; // offset de Data ( multi *4 da el tamaño de la cabecera)
+    uint8_t  th_flags;        // flags 
+    uint16_t th_win;          
+    uint16_t th_sum;          
+    uint16_t th_urp;
     // se pueden agregar mas campos si ocupamos analizar mas banderas o cosas asi
-};
+} __attribute__((packed));
 
 
 

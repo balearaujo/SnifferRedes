@@ -8,12 +8,23 @@
 int link_hdr_length = 0;
 
 void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
+
+    if (packet[12] != 0x08 || packet[13] != 0x00) {
+        return; 
+    }
+
+    const u_char *ip_ptr = packet + link_hdr_length;
+    struct ip_header *ip_hdr = (struct ip_header *)ip_ptr;
+    if (ip_hdr->ip_p != 6 && ip_hdr->ip_p != 17) {
+        return;
+    }
+
     static int cnt = 1;
-    printf("\n Packet %d captured \n", cnt++);
+    printf("\n Packet %d captured    ", cnt++);
 
     // ir a donde empieza la ip
     const u_char *ip_packet_ptr = packet + link_hdr_length;
-    struct ip_header *ip_hdr = (struct ip_header *)ip_packet_ptr;
+    int ip_hdr_len = (ip_hdr->ip_v_hl & 0x0F) * 4;
 
     // convertir ips q estan en binario a texto 
     char src_ip[INET_ADDRSTRLEN];
@@ -21,21 +32,21 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
     inet_ntop(AF_INET, &(ip_hdr->ip_src), src_ip, INET_ADDRSTRLEN);
     inet_ntop(AF_INET, &(ip_hdr->ip_dst), dst_ip, INET_ADDRSTRLEN);
 
-    int ip_hdr_len = ip_hdr->ip_hl * 4;
 
-    printf("IP Origen: %s\n", src_ip);
-    printf("IP Destino: %s\n", dst_ip);
-    printf("Protocolo: %d\n", ip_hdr->ip_p);
+    printf("IP Origen: %s   ", src_ip);
+    printf("IP Destino: %s   ", dst_ip);
+    printf("Protocolo: %d   ", ip_hdr->ip_p);
+    // protocolo 6 = TCP, UDP = 17, ICMP = 1 etc
 
     // si es tcp, calcularel inicio y el tam del payload
     if (ip_hdr->ip_p == 6) {
         const u_char *tcp_packet_ptr = ip_packet_ptr + ip_hdr_len;
         struct tcp_header *tcp_hdr = (struct tcp_header *)tcp_packet_ptr;
         
-        int tcp_hdr_len = tcp_hdr->th_off * 4;
+        int tcp_hdr_len = ((tcp_hdr->th_off_x2 >> 4) & 0x0F) * 4;
 
-        printf("Puerto Origen: %d\n", ntohs(tcp_hdr->th_sport));
-        printf("Puerto Destino: %d\n", ntohs(tcp_hdr->th_dport));
+        printf("Puerto Origen: %d   ", ntohs(tcp_hdr->th_sport));
+        printf("Puerto Destino: %d   ", ntohs(tcp_hdr->th_dport));
 
         // puntero al inicio de los datos
         const u_char *payload_ptr = tcp_packet_ptr + tcp_hdr_len;
@@ -44,7 +55,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
         int total_ip_len = ntohs(ip_hdr->ip_len);
         int payload_len = total_ip_len - (ip_hdr_len + tcp_hdr_len);
 
-        printf("Tamanioo del Payload: %d bytes\n", payload_len);
+        printf("Tamanioo del Payload: %d bytes     ", payload_len);
 
         if (payload_len > 0) {
             // mostrar payload en hex
@@ -55,10 +66,9 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             for (int i = 0; i < limite_bytes; i++) {
                 printf("%02X ", payload_ptr[i]);
             }
-            printf("\n");
 
             //mostrar el payload pero ahora en texto legible (no se lee nada pero porque los protocolos son seguros, si fueran inseguros si se podria leer)
-            printf("Payload en texto: ");
+            printf("   Payload en texto: ");
             for (int i = 0; i < limite_bytes; i++) {
                 if (payload_ptr[i] >= 32 && payload_ptr[i] <= 126) {
                     printf("%c", payload_ptr[i]);
@@ -82,7 +92,6 @@ int main() {
     pcap_if_t *d;
     pcap_t *capdev;
     char error_buffer[PCAP_ERRBUF_SIZE];
-    int packets_count=20;
     
     int i=0;
     int numElegido;
@@ -145,6 +154,8 @@ int main() {
 
 
     pcap_freealldevs(alldevs);
+
+    int packets_count=0;
 
     printf("Escuchando %d paquetes...\n", packets_count);
 
