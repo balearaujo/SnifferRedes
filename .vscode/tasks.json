@@ -13,6 +13,9 @@
                 "-lwpcap",
                 "-lPacket",
                 "-lws2_32",
+                "-lgdi32",
+                "-lcomctl32",
+                "-mwindows",
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe"
             ],
