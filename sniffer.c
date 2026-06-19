@@ -7,6 +7,7 @@
 #include <commctrl.h>
 #include <pcap.h> 
 #include "headers.h"
+extern pcap_t* MostrarSelectorInterfaces(HINSTANCE hInstance, int *out_link_length); //nnvea funcion para seleccion
 
 // Identificadores de las áreas de la interfaz
 #define ID_LISTVIEW_TRAFICO 101
@@ -185,8 +186,8 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
                 10, 395, 760, 150, hwnd, (HMENU)ID_TEXT_RAW, NULL, NULL);
             
             HFONT hFont = CreateFont(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, 
-                                     OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, 
-                                     FIXED_PITCH | FF_MODERN, "Courier New");
+                                    OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, 
+                                    FIXED_PITCH | FF_MODERN, "Courier New");
             SendMessage(hwndRaw, WM_SETFONT, (WPARAM)hFont, TRUE);
             break;
         }
@@ -238,58 +239,15 @@ LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM 
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    pcap_if_t *alldevs, *d;
-    char error_buffer[PCAP_ERRBUF_SIZE];
-
-    if (pcap_findalldevs(&alldevs, error_buffer) == -1) return 1;
+    // Llamamos al archivo nuevo para que haga la magia
+    capdev=MostrarSelectorInterfaces(hInstance, &link_hdr_length);
     
-    // --- BUSCADOR INTELIGENTE Y PORTABLE DE INTERFAZ ---
-    d = NULL;
-    for (pcap_if_t *curr = alldevs; curr != NULL; curr = curr->next) {
-        if (curr->addresses != NULL) {
-            // Busca adaptadores reales por cable o inalámbricos activos
-            if (curr->description != NULL && 
-               (strstr(curr->description, "Ethernet") != NULL || 
-                strstr(curr->description, "PCIe") != NULL || 
-                strstr(curr->description, "Intel") != NULL || 
-                strstr(curr->description, "Realtek") != NULL ||
-                strstr(curr->description, "Wi-Fi") != NULL ||
-                strstr(curr->description, "Wireless") != NULL)) {
-                d = curr;
-                break; 
-            }
-        }
-    }
-    
-    // Si el filtro estricto falla, toma la primera con IP por respaldo
-    if (d == NULL) {
-        for (pcap_if_t *curr = alldevs; curr != NULL; curr = curr->next) {
-            if (curr->addresses != NULL) {
-                d = curr;
-                break;
-            }
-        }
-    }
-    
-    if (d == NULL) d = alldevs;
-    if (d == NULL) return 1;
-    // --- FIN DEL BUSCADOR INTELIGENTE ---
-
-    capdev = pcap_open_live(d->name, 65536, 1, 1000, error_buffer);
-    if (capdev == NULL) {
-        pcap_freealldevs(alldevs);
-        return 1;
+    if (capdev==NULL){
+        return 0; //si falla la funcion
     }
 
-    int link_hdr_type = pcap_datalink(capdev);
-    if (link_hdr_type == DLT_EN10MB) link_hdr_length = 14;
-    else if (link_hdr_type == DLT_NULL) link_hdr_length = 4;
-    else link_hdr_length = 0;
-
-    pcap_freealldevs(alldevs);
-
-    InitCommonControls();
-
+    //elimine esta seccion para poder elegir entre los device y salta directo
+    
     WNDCLASSEX wincl = {0};
     wincl.hInstance = hInstance;
     wincl.lpszClassName = "SnifferGUI";

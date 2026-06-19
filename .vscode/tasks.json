@@ -7,7 +7,7 @@
             "command": "gcc",
             "args": [
                 "-g",
-                "${file}",
+                "${workspaceFolder}\\*.c",
                 "-I${workspaceFolder}/Npcap-SDK/Include",
                 "-L${workspaceFolder}/Npcap-SDK/Lib/x64", 
                 "-lwpcap",
