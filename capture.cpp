@@ -19,11 +19,44 @@ volatile bool capture_running = false;
 std::thread capture_thread;
 std::chrono::steady_clock::time_point capture_start_time;
 
+void generar_hexdump(PacketMemory& pkt, const u_char* packet, int caplen) {
+    pkt.raw_hex = "Frame " + std::to_string(pkt.id) + ": " + std::to_string(pkt.length) + " bytes on wire\r\n\r\nHEXDUMP (Hex | ASCII):\r\n";
+    char temp[64];
+    for (int i = 0; i < caplen; i += 16) {
+        sprintf(temp, "%04X  ", i);
+        pkt.raw_hex += temp;
+        for (int j = 0; j < 16; j++) {
+            if (i + j < caplen) {
+                sprintf(temp, "%02X ", packet[i + j]);
+                pkt.raw_hex += temp;
+            } else {
+                pkt.raw_hex += "   ";
+            }
+            if (j == 7) pkt.raw_hex += " ";
+        }
+        pkt.raw_hex += " | ";
+        for (int j = 0; j < 16; j++) {
+            if (i + j < caplen) {
+                u_char c = packet[i + j];
+                if (c >= 32 && c <= 126) {
+                    pkt.raw_hex += (char)c;
+                } else {
+                    pkt.raw_hex += ".";
+                }
+            }
+        }
+        pkt.raw_hex += "\r\n";
+    }
+}
+
 void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
     if (!capture_running) return;
 
     double ts = std::chrono::duration<double>(std::chrono::steady_clock::now() - capture_start_time).count();
 
+    std::lock_guard<std::mutex> lock(historial_mutex);
+    global_stats.total_bytes += pkthdr->len;
+    
     PacketMemory pkt;
     pkt.timestamp = ts;
     pkt.length = pkthdr->len;
@@ -53,7 +86,6 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             es_ipv4 = 1;
             ip_ptr = packet + 14;
         } else if (packet[12] == 0x08 && packet[13] == 0x06) { // ARP
-            std::lock_guard<std::mutex> lock(historial_mutex);
             global_stats.arp++;
             global_stats.total++;
             pkt.protocol_name = "ARP";
@@ -62,17 +94,10 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             pkt.dst_ip = "Broadcast";
             strcat(buffer_estructura, "=== CAPA DE RED (ARP) ===\r\n");
             pkt.detalle = buffer_estructura;
-            char temp_hex[16];
-            pkt.raw_hex = "Frame " + std::to_string(pkt.id) + ": " + std::to_string(pkt.length) + " bytes on wire\r\n\r\nHEXDUMP:\r\n";
-            for (int i = 0; i < (int)pkthdr->caplen; i++) {
-                sprintf(temp_hex, "%02X ", packet[i]);
-                pkt.raw_hex += temp_hex;
-                if ((i + 1) % 16 == 0) pkt.raw_hex += "\r\n";
-            }
+            generar_hexdump(pkt, packet, pkthdr->caplen);
             historial_paquetes.push_back(pkt);
             return;
         } else if (packet[12] == 0x86 && packet[13] == 0xDD) { // IPv6
-            std::lock_guard<std::mutex> lock(historial_mutex);
             global_stats.other++; 
             global_stats.total++;
             pkt.protocol_name = "IPv6";
@@ -134,29 +159,16 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 strcat(buffer_estructura, "\r\n=== CAPA DE RED (ICMPv6) ===\r\n");
             }
             pkt.detalle = buffer_estructura;
-            char temp_hex[16];
-            pkt.raw_hex = "Frame " + std::to_string(pkt.id) + ": " + std::to_string(pkt.length) + " bytes on wire\r\n\r\nHEXDUMP:\r\n";
-            for (int i = 0; i < (int)pkthdr->caplen; i++) {
-                sprintf(temp_hex, "%02X ", packet[i]);
-                pkt.raw_hex += temp_hex;
-                if ((i + 1) % 16 == 0) pkt.raw_hex += "\r\n";
-            }
+            generar_hexdump(pkt, packet, pkthdr->caplen);
             historial_paquetes.push_back(pkt);
             return;
         } else {
-            std::lock_guard<std::mutex> lock(historial_mutex);
             global_stats.other++;
             global_stats.total++;
             pkt.protocol_name = "Ethernet";
             pkt.id = historial_paquetes.size() + 1;
             pkt.detalle = buffer_estructura;
-            char temp_hex[16];
-            pkt.raw_hex = "Frame " + std::to_string(pkt.id) + ": " + std::to_string(pkt.length) + " bytes on wire\r\n\r\nHEXDUMP:\r\n";
-            for (int i = 0; i < (int)pkthdr->caplen; i++) {
-                sprintf(temp_hex, "%02X ", packet[i]);
-                pkt.raw_hex += temp_hex;
-                if ((i + 1) % 16 == 0) pkt.raw_hex += "\r\n";
-            }
+            generar_hexdump(pkt, packet, pkthdr->caplen);
             historial_paquetes.push_back(pkt);
             return;
         }
@@ -180,18 +192,13 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
 
     int ip_hdr_len = (ip_hdr->ip_v_hl & 0x0F) * 4;
 
-    char sub_ip[1024];
-    sprintf(sub_ip, 
-            "=== CAPA DE RED (IPv4) ===\r\n"
-            "|- Version: %d\r\n"
-            "|- Tamano Cabecera: %d bytes\r\n"
-            "|- TTL: %d\r\n"
-            "|- ID: %d\r\n"
-            "|- Protocolo Interno: %d\r\n", 
-            (ip_hdr->ip_v_hl >> 4), ip_hdr_len, ip_hdr->ip_ttl, ntohs(ip_hdr->ip_id), ip_hdr->ip_p);
-    strcat(buffer_estructura, sub_ip);
-
-    std::lock_guard<std::mutex> lock(historial_mutex);
+    char sub_ipv4[1024];
+    sprintf(sub_ipv4, "=== CAPA DE RED (IPv4) ===\r\n"
+                      "|- Longitud Total: %d\r\n"
+                      "|- TTL: %d\r\n"
+                      "|- Protocolo Interno: %d\r\n", 
+                      ntohs(ip_hdr->ip_len), ip_hdr->ip_ttl, ip_hdr->ip_p);
+    strcat(buffer_estructura, sub_ipv4);
 
     if (ip_hdr->ip_p == 6) { 
         global_stats.tcp++;
@@ -216,6 +223,10 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 "|- Numero ACK: %u\r\n", 
                 sport, dport, ntohl(tcp_hdr->th_seq), ntohl(tcp_hdr->th_ack));
         strcat(buffer_estructura, sub_tcp);
+
+        if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
+            strcat(buffer_estructura, "\r\n[!] ADVERTENCIA: TRAFICO VULNERABLE (Texto Plano Detectado) [!]\r\n");
+        }
         
     } else if (ip_hdr->ip_p == 17) { 
         global_stats.udp++;
@@ -250,22 +261,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
     pkt.id = historial_paquetes.size() + 1;
     pkt.detalle = buffer_estructura;
 
-    char temp_hex[16];
-    pkt.raw_hex = "Frame " + std::to_string(pkt.id) + ": " + std::to_string(pkt.length) + " bytes on wire\r\n\r\nHEXDUMP:\r\n";
-    for (int i = 0; i < (int)pkthdr->caplen; i++) {
-        sprintf(temp_hex, "%02X ", packet[i]);
-        pkt.raw_hex += temp_hex;
-        if ((i + 1) % 16 == 0) pkt.raw_hex += "\r\n";
-    }
-    pkt.raw_hex += "\r\n\r\nTEXTO ASCII:\r\n";
-    for (int i = 0; i < (int)pkthdr->caplen; i++) {
-        if (packet[i] >= 32 && packet[i] <= 126) {
-            pkt.raw_hex += (char)packet[i];
-        } else {
-            pkt.raw_hex += ".";
-        }
-        if ((i + 1) % 32 == 0) pkt.raw_hex += "\r\n";
-    }
+    generar_hexdump(pkt, packet, pkthdr->caplen);
 
     historial_paquetes.push_back(pkt);
 }

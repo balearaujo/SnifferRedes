@@ -77,6 +77,7 @@ typedef struct {
     int arp;
     int other;
     int total;
+    unsigned long long total_bytes;
 } ProtocolStats;
 
 extern ProtocolStats global_stats;

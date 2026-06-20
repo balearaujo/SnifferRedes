@@ -34,6 +34,10 @@ AppState currentState = STATE_SELECT_INTERFACE;
 pcap_if_t *alldevs = nullptr;
 char errbuf[PCAP_ERRBUF_SIZE];
 bool show_pie_chart = true;
+bool show_io_graph = false;
+float io_graph_history[120] = {0};
+double last_io_time = 0;
+unsigned long long last_total_bytes = 0;
 int selected_packet_index = -1;
 char filter_ip_src[64] = "";
 char filter_ip_dst[64] = "";
@@ -43,6 +47,7 @@ int filter_proto_index = 0;
 const char* proto_options[] = { "Todos", "TCP", "UDP", "ICMP", "ARP", "IPv6", "HTTP", "TLSv1.3", "DNS", "SSDP", "DHCP" };
 
 extern volatile bool capture_running;
+extern std::chrono::steady_clock::time_point capture_start_time;
 
 void DrawPieChart(ImDrawList* draw_list, ImVec2 center, float radius, float start_angle, float end_angle, ImU32 color) {
     if (end_angle - start_angle <= 0.0f) return;
@@ -206,8 +211,36 @@ int main(int, char**) {
                 exportar_csv();
             }
             ImGui::SameLine();
-            if (ImGui::Button(show_pie_chart ? "Ocultar Grafico" : "Mostrar Grafico")) {
+            if (ImGui::Button("Reiniciar Captura")) {
+                ImGui::OpenPopup("Confirmar Reinicio");
+            }
+            if (ImGui::BeginPopupModal("Confirmar Reinicio", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("¿Estas seguro de que deseas borrar todos los paquetes?\nEsta accion no se puede deshacer.");
+                ImGui::Separator();
+                if (ImGui::Button("Si, Reiniciar", ImVec2(120, 0))) {
+                    std::lock_guard<std::mutex> lock(historial_mutex);
+                    historial_paquetes.clear();
+                    global_stats = {0};
+                    capture_start_time = std::chrono::steady_clock::now();
+                    for(int i=0; i<120; i++) io_graph_history[i] = 0;
+                    last_total_bytes = 0;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SetItemDefaultFocus();
+                ImGui::SameLine();
+                if (ImGui::Button("Cancelar", ImVec2(120, 0))) {
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button(show_pie_chart ? "Ocultar Pie Chart" : "Mostrar Pie Chart")) {
                 show_pie_chart = !show_pie_chart;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(show_io_graph ? "Ocultar I/O Graph" : "Mostrar I/O Graph")) {
+                show_io_graph = !show_io_graph;
             }
             ImGui::SameLine();
             ImGui::Text("Filtros:");
@@ -236,9 +269,9 @@ int main(int, char**) {
             ImGui::Separator();
 
             // Layout
-            float right_panel_width = show_pie_chart ? 250.0f : 0.0f;
+            float right_panel_width = (show_pie_chart || show_io_graph) ? 300.0f : 0.0f;
             float left_panel_width = ImGui::GetContentRegionAvail().x - right_panel_width;
-            if (show_pie_chart) left_panel_width -= ImGui::GetStyle().ItemSpacing.x;
+            if (show_pie_chart || show_io_graph) left_panel_width -= ImGui::GetStyle().ItemSpacing.x;
 
             ImGui::BeginChild("LeftPanel", ImVec2(left_panel_width, 0), false);
             
@@ -247,8 +280,7 @@ int main(int, char**) {
             
             // Forzar texto negro y fondo blanco/gris para la tabla (para que los colores pastel se vean bien)
             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
-            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(150, 150, 150, 255));
-            ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(130, 130, 130, 255));
+            ImGui::PushStyleColor(ImGuiCol_TableHeaderBg, IM_COL32(200, 200, 220, 255));
             
             if (ImGui::BeginTable("table1", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
                 // Header with dark text and standard background
@@ -307,7 +339,7 @@ int main(int, char**) {
 
                 ImGui::EndTable();
             }
-            ImGui::PopStyleColor(3); // Restore text color
+            ImGui::PopStyleColor(2); // Restore text color
             ImGui::EndChild();
 
             // Area 2 & 3: Detalles (mitad inferior)
@@ -330,11 +362,87 @@ int main(int, char**) {
             ImGui::EndChild(); // Area23
 
             ImGui::EndChild(); // LeftPanel
-
-            if (show_pie_chart) {
+            
+            // Area 4: Right Panel (Graphs)
+            if (show_pie_chart || show_io_graph) {
                 ImGui::SameLine();
-                ImGui::BeginChild("RightPanel", ImVec2(0, 0), true);
-                RenderPieChartPanel();
+                ImGui::BeginChild("RightPanel", ImVec2(right_panel_width, 0), true);
+
+                if (show_io_graph) {
+                    ImGui::Text("I/O Graph (Ancho de Banda)");
+                    ImGui::Separator();
+                    
+                    double current_time = ImGui::GetTime();
+                    if (current_time - last_io_time >= 1.0) { // every 1 second
+                        unsigned long long current_total = global_stats.total_bytes;
+                        unsigned long long diff = current_total - last_total_bytes;
+                        // shift array
+                        for (int i = 0; i < 119; i++) {
+                            io_graph_history[i] = io_graph_history[i + 1];
+                        }
+                        io_graph_history[119] = (float)diff;
+                        last_total_bytes = current_total;
+                        last_io_time = current_time;
+                    }
+                    
+                    ImGui::PlotLines("##iograph", io_graph_history, 120, 0, "Bytes/s", 0.0f, FLT_MAX, ImVec2(right_panel_width - 15, 120));
+                    ImGui::Spacing();
+                }
+
+                if (show_pie_chart) {
+                    ImGui::Text("Distribucion de Protocolos");
+                    ImGui::Separator();
+                    int total = global_stats.total;
+                    if (total > 0) {
+                        float data[] = {
+                            (float)global_stats.tcp,
+                            (float)global_stats.udp,
+                            (float)global_stats.icmp,
+                            (float)global_stats.arp,
+                            (float)global_stats.other
+                        };
+                        const char* labels[] = { "TCP", "UDP", "ICMP", "ARP", "Otros" };
+                        ImU32 colors[] = { 
+                            IM_COL32(150, 100, 255, 255), // TCP 
+                            IM_COL32(100, 200, 255, 255), // UDP
+                            IM_COL32(255, 100, 150, 255), // ICMP
+                            IM_COL32(255, 200, 100, 255), // ARP
+                            IM_COL32(150, 150, 150, 255)  // Otros
+                        };
+                        
+                        // Render pie chart
+                        ImDrawList* draw_list = ImGui::GetWindowDrawList();
+                        ImVec2 p = ImGui::GetCursorScreenPos();
+                        float radius = 70.0f;
+                        ImVec2 center = ImVec2(p.x + right_panel_width / 2.0f - 5, p.y + radius + 10);
+                        
+                        float a_min = 0.0f;
+                        float a_max = 0.0f;
+                        for (int i = 0; i < 5; i++) {
+                            if (data[i] > 0) {
+                                a_max = a_min + (data[i] / total) * (3.1415926535f * 2.0f);
+                                draw_list->PathArcTo(center, radius, a_min, a_max, 32);
+                                draw_list->PathLineTo(center);
+                                draw_list->AddConvexPolyFilled(draw_list->_Path.Data, draw_list->_Path.Size, colors[i]);
+                                draw_list->PathClear();
+                                a_min = a_max;
+                            }
+                        }
+
+                        ImGui::Dummy(ImVec2(0, radius * 2 + 20));
+                        
+                        // Legend
+                        for (int i = 0; i < 5; i++) {
+                            if (data[i] > 0) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, colors[i]);
+                                ImGui::Text("%s: %.1f%% (%d)", labels[i], (data[i] / total) * 100.0f, (int)data[i]);
+                                ImGui::PopStyleColor();
+                            }
+                        }
+                    } else {
+                        ImGui::Text("No hay paquetes capturados.");
+                    }
+                }
                 ImGui::EndChild();
             }
         }
