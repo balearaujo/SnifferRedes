@@ -126,7 +126,7 @@ int main(int, char**) {
         io.Fonts->AddFontDefault();
     }
 
-    ImGui::StyleColorsLight();
+    ImGui::StyleColorsDark();
 
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
@@ -244,7 +244,14 @@ int main(int, char**) {
             
             // Area 1: Lista (mitad superior)
             ImGui::BeginChild("Area1", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.5f), true);
+            
+            // Forzar texto negro y fondo blanco/gris para la tabla (para que los colores pastel se vean bien)
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, IM_COL32(150, 150, 150, 255));
+            ImGui::PushStyleColor(ImGuiCol_HeaderActive, IM_COL32(130, 130, 130, 255));
+            
             if (ImGui::BeginTable("table1", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
+                // Header with dark text and standard background
                 ImGui::TableSetupScrollFreeze(0, 1);
                 ImGui::TableSetupColumn("No.");
                 ImGui::TableSetupColumn("Tiempo");
@@ -300,6 +307,7 @@ int main(int, char**) {
 
                 ImGui::EndTable();
             }
+            ImGui::PopStyleColor(3); // Restore text color
             ImGui::EndChild();
 
             // Area 2 & 3: Detalles (mitad inferior)

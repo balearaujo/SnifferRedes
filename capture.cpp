@@ -86,9 +86,53 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             pkt.src_ip = src6;
             pkt.dst_ip = dst6;
 
-            char sub_ip6[256];
-            sprintf(sub_ip6, "=== CAPA DE RED (IPv6) ===\r\n|- Next Header: %d\r\n|- Hop Limit: %d\r\n", ip6->next_header, ip6->hop_limit);
+            int payload_len = ntohs(ip6->payload_len);
+            uint32_t vtf = ntohl(ip6->vtf);
+            int version = (vtf >> 28) & 0x0F;
+            int traffic_class = (vtf >> 20) & 0xFF;
+            int flow_label = vtf & 0xFFFFF;
+
+            char sub_ip6[1024];
+            sprintf(sub_ip6, "=== CAPA DE RED (IPv6) ===\r\n"
+                             "|- Version: %d\r\n"
+                             "|- Traffic Class: 0x%02X\r\n"
+                             "|- Flow Label: 0x%05X\r\n"
+                             "|- Payload Length: %d\r\n"
+                             "|- Next Header: %d\r\n"
+                             "|- Hop Limit: %d\r\n", 
+                             version, traffic_class, flow_label, payload_len, ip6->next_header, ip6->hop_limit);
             strcat(buffer_estructura, sub_ip6);
+
+            const u_char* payload_ptr = packet + 14 + 40; // 40 is standard IPv6 header size
+
+            if (ip6->next_header == 6) { // TCP
+                global_stats.other--; global_stats.tcp++;
+                pkt.protocol_name = "TCP";
+                struct tcp_header *tcp_hdr = (struct tcp_header *)payload_ptr;
+                uint16_t sport = ntohs(tcp_hdr->th_sport);
+                uint16_t dport = ntohs(tcp_hdr->th_dport);
+                pkt.src_port = sport; pkt.dst_port = dport;
+                if (sport == 443 || dport == 443) pkt.protocol_name = "TLSv1.3";
+                else if (sport == 80 || dport == 80) pkt.protocol_name = "HTTP";
+                char sub_tcp[512];
+                sprintf(sub_tcp, "\r\n=== CAPA DE TRANSPORTE (TCP) ===\r\n|- Puerto Origen: %d\r\n|- Puerto Destino: %d\r\n|- Numero Secuencia: %u\r\n|- Numero ACK: %u\r\n", sport, dport, ntohl(tcp_hdr->th_seq), ntohl(tcp_hdr->th_ack));
+                strcat(buffer_estructura, sub_tcp);
+            } else if (ip6->next_header == 17) { // UDP
+                global_stats.other--; global_stats.udp++;
+                pkt.protocol_name = "UDP";
+                uint16_t sport = ntohs(*(uint16_t *)(payload_ptr));
+                uint16_t dport = ntohs(*(uint16_t *)(payload_ptr + 2));
+                pkt.src_port = sport; pkt.dst_port = dport;
+                if (sport == 53 || dport == 53) pkt.protocol_name = "DNS";
+                else if (sport == 1900 || dport == 1900) pkt.protocol_name = "SSDP";
+                char sub_udp[512];
+                sprintf(sub_udp, "\r\n=== CAPA DE TRANSPORTE (UDP) ===\r\n|- Puerto Origen: %d\r\n|- Puerto Destino: %d\r\n", sport, dport);
+                strcat(buffer_estructura, sub_udp);
+            } else if (ip6->next_header == 58) { // ICMPv6
+                global_stats.other--; global_stats.icmp++;
+                pkt.protocol_name = "ICMPv6";
+                strcat(buffer_estructura, "\r\n=== CAPA DE RED (ICMPv6) ===\r\n");
+            }
             pkt.detalle = buffer_estructura;
             char temp_hex[16];
             pkt.raw_hex = "Frame " + std::to_string(pkt.id) + ": " + std::to_string(pkt.length) + " bytes on wire\r\n\r\nHEXDUMP:\r\n";
