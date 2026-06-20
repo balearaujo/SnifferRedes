@@ -247,7 +247,6 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
         strcat(buffer_estructura, sub_tcp);
 
         if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
-            strcat(buffer_estructura, "\r\n[!] ADVERTENCIA: TRAFICO VULNERABLE (Texto Plano Detectado) [!]\r\n");
             pkt.is_vulnerable = true;
             
             // Extract Payload
