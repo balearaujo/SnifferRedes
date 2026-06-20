@@ -1,0 +1,337 @@
+#include "imgui.h"
+#include "imgui_impl_win32.h"
+#include "imgui_impl_dx11.h"
+#include <d3d11.h>
+#include <tchar.h>
+#include <vector>
+#include <string>
+#include <pcap.h>
+#include "headers.h"
+#include <math.h>
+
+#ifndef PI
+#define PI 3.14159265358979323846
+#endif
+
+// Variables DirectX
+static ID3D11Device*            g_pd3dDevice = nullptr;
+static ID3D11DeviceContext*     g_pd3dDeviceContext = nullptr;
+static IDXGISwapChain*          g_pSwapChain = nullptr;
+static UINT                     g_ResizeWidth = 0, g_ResizeHeight = 0;
+static ID3D11RenderTargetView*  g_mainRenderTargetView = nullptr;
+
+bool CreateDeviceD3D(HWND hWnd);
+void CleanupDeviceD3D();
+void CreateRenderTarget();
+void CleanupRenderTarget();
+LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+// Estado de la aplicacion
+enum AppState { STATE_SELECT_INTERFACE, STATE_DASHBOARD };
+AppState currentState = STATE_SELECT_INTERFACE;
+
+// Variables de UI
+pcap_if_t *alldevs = nullptr;
+char errbuf[PCAP_ERRBUF_SIZE];
+bool show_pie_chart = true;
+int selected_packet_index = -1;
+char filter_input[256] = "";
+
+void DrawPieChart(ImDrawList* draw_list, ImVec2 center, float radius, float start_angle, float end_angle, ImU32 color) {
+    if (end_angle - start_angle <= 0.0f) return;
+    draw_list->PathLineTo(center);
+    draw_list->PathArcTo(center, radius, start_angle, end_angle, 32);
+    draw_list->PathFillConvex(color);
+}
+
+void RenderPieChartPanel() {
+    std::lock_guard<std::mutex> lock(historial_mutex);
+    if (global_stats.total == 0) {
+        ImGui::Text("Esperando trafico...");
+        return;
+    }
+    
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float radius = 80.0f;
+    ImVec2 center = ImVec2(p.x + radius + 20, p.y + radius + 20);
+    
+    float current_angle = 0.0f;
+    float total = (float)global_stats.total;
+
+    struct PieData { float count; ImU32 color; const char* name; };
+    PieData data[] = {
+        { (float)global_stats.tcp, IM_COL32(255, 50, 50, 255), "TCP" },
+        { (float)global_stats.udp, IM_COL32(50, 150, 255, 255), "UDP" },
+        { (float)global_stats.icmp, IM_COL32(50, 255, 50, 255), "ICMP" },
+        { (float)global_stats.arp, IM_COL32(255, 255, 50, 255), "ARP" },
+        { (float)global_stats.other, IM_COL32(180, 180, 180, 255), "Otros" }
+    };
+
+    for (int i = 0; i < 5; i++) {
+        if (data[i].count > 0) {
+            float sweep = (data[i].count / total) * 2.0f * PI;
+            DrawPieChart(draw_list, center, radius, current_angle, current_angle + sweep, data[i].color);
+            current_angle += sweep;
+        }
+    }
+    
+    ImGui::Dummy(ImVec2(radius * 2 + 40, radius * 2 + 40));
+    
+    for (int i = 0; i < 5; i++) {
+        ImGui::PushStyleColor(ImGuiCol_Text, data[i].color);
+        ImGui::Text("%s: %.0f", data[i].name, data[i].count);
+        ImGui::PopStyleColor();
+    }
+}
+
+int main(int, char**) {
+    WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Example", nullptr };
+    ::RegisterClassExW(&wc);
+    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"SnifferPro - Dashboard Edition", WS_OVERLAPPEDWINDOW, 100, 100, 1280, 800, nullptr, nullptr, wc.hInstance, nullptr);
+
+    if (!CreateDeviceD3D(hwnd)) {
+        CleanupDeviceD3D();
+        ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+        return 1;
+    }
+
+    ::ShowWindow(hwnd, SW_SHOWDEFAULT);
+    ::UpdateWindow(hwnd);
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplWin32_Init(hwnd);
+    ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+
+    if (pcap_findalldevs(&alldevs, errbuf) == -1) {
+        alldevs = nullptr;
+    }
+
+    bool done = false;
+    while (!done) {
+        MSG msg;
+        while (::PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
+            ::TranslateMessage(&msg);
+            ::DispatchMessage(&msg);
+            if (msg.message == WM_QUIT) done = true;
+        }
+        if (done) break;
+
+        if (g_ResizeWidth != 0 && g_ResizeHeight != 0) {
+            CleanupRenderTarget();
+            g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight, DXGI_FORMAT_UNKNOWN, 0);
+            g_ResizeWidth = g_ResizeHeight = 0;
+            CreateRenderTarget();
+        }
+
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(io.DisplaySize);
+        ImGui::Begin("Main", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+        if (currentState == STATE_SELECT_INTERFACE) {
+            ImGui::Text("Selecciona la interfaz de red para capturar:");
+            ImGui::Separator();
+            if (!alldevs) {
+                ImGui::TextColored(ImVec4(1, 0, 0, 1), "Error al buscar interfaces de red.");
+            } else {
+                if (ImGui::BeginListBox("##interfaces", ImVec2(-FLT_MIN, -FLT_MIN))) {
+                    for (pcap_if_t *d = alldevs; d != nullptr; d = d->next) {
+                        char label[512];
+                        sprintf(label, "%s - %s", d->name, d->description ? d->description : "Sin descripcion");
+                        if (ImGui::Selectable(label)) {
+                            pcap_t *capdev = pcap_open_live(d->name, 65536, 1, 1, errbuf); // TIMEOUT 1 ms!
+                            if (capdev) {
+                                int link_hdr_type = pcap_datalink(capdev);
+                                int link_len = (link_hdr_type == DLT_EN10MB) ? 14 : ((link_hdr_type == DLT_NULL) ? 4 : 0);
+                                iniciar_captura(capdev, link_len);
+                                currentState = STATE_DASHBOARD;
+                            }
+                        }
+                    }
+                    ImGui::EndListBox();
+                }
+            }
+        } else if (currentState == STATE_DASHBOARD) {
+            // Toolbar
+            if (ImGui::Button("Volver Atras")) {
+                detener_captura();
+                historial_paquetes.clear();
+                global_stats = {0};
+                currentState = STATE_SELECT_INTERFACE;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Exportar CSV")) {
+                exportar_csv();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(show_pie_chart ? "Ocultar Grafico" : "Mostrar Grafico")) {
+                show_pie_chart = !show_pie_chart;
+            }
+            ImGui::SameLine();
+            ImGui::Text("Filtro:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(300);
+            ImGui::InputText("##filtro", filter_input, IM_ARRAYSIZE(filter_input));
+            ImGui::SameLine();
+            if (ImGui::Button("Aplicar Filtro")) {
+                aplicar_filtro(filter_input);
+            }
+            ImGui::Separator();
+
+            // Layout
+            float right_panel_width = show_pie_chart ? 250.0f : 0.0f;
+            float left_panel_width = ImGui::GetContentRegionAvail().x - right_panel_width;
+            if (show_pie_chart) left_panel_width -= ImGui::GetStyle().ItemSpacing.x;
+
+            ImGui::BeginChild("LeftPanel", ImVec2(left_panel_width, 0), false);
+            
+            // Area 1: Lista (mitad superior)
+            ImGui::BeginChild("Area1", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.5f), true);
+            if (ImGui::BeginTable("table1", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY)) {
+                ImGui::TableSetupScrollFreeze(0, 1);
+                ImGui::TableSetupColumn("No.");
+                ImGui::TableSetupColumn("IP Origen");
+                ImGui::TableSetupColumn("IP Destino");
+                ImGui::TableSetupColumn("Proto");
+                ImGui::TableSetupColumn("Longitud");
+                ImGui::TableHeadersRow();
+
+                std::lock_guard<std::mutex> lock(historial_mutex);
+                for (size_t i = 0; i < historial_paquetes.size(); i++) {
+                    ImGui::TableNextRow();
+                    if (ImGui::TableSetColumnIndex(0)) {
+                        char buf[32]; sprintf(buf, "%d", historial_paquetes[i].id);
+                        if (ImGui::Selectable(buf, selected_packet_index == (int)i, ImGuiSelectableFlags_SpanAllColumns)) {
+                            selected_packet_index = i;
+                        }
+                    }
+                    if (ImGui::TableSetColumnIndex(1)) ImGui::TextUnformatted(historial_paquetes[i].src_ip);
+                    if (ImGui::TableSetColumnIndex(2)) ImGui::TextUnformatted(historial_paquetes[i].dst_ip);
+                    if (ImGui::TableSetColumnIndex(3)) ImGui::Text("%d", historial_paquetes[i].protocol);
+                    if (ImGui::TableSetColumnIndex(4)) ImGui::Text("%d", historial_paquetes[i].length);
+                }
+                ImGui::EndTable();
+            }
+            ImGui::EndChild();
+
+            // Area 2 & 3: Detalles (mitad inferior)
+            ImGui::BeginChild("Area23", ImVec2(0, 0), false);
+            ImGui::BeginChild("Area2", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.5f), true);
+            if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
+                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].detalle);
+            } else {
+                ImGui::Text("Selecciona un paquete...");
+            }
+            ImGui::EndChild();
+            
+            ImGui::BeginChild("Area3", ImVec2(0, 0), true);
+            if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
+                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].raw_hex);
+            } else {
+                ImGui::Text("Volcado Hexadecimal...");
+            }
+            ImGui::EndChild();
+            ImGui::EndChild(); // Area23
+
+            ImGui::EndChild(); // LeftPanel
+
+            if (show_pie_chart) {
+                ImGui::SameLine();
+                ImGui::BeginChild("RightPanel", ImVec2(0, 0), true);
+                RenderPieChartPanel();
+                ImGui::EndChild();
+            }
+        }
+
+        ImGui::End();
+        ImGui::Render();
+        const float clear_color_with_alpha[4] = { 0.45f, 0.55f, 0.60f, 1.00f };
+        g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
+        g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color_with_alpha);
+        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        g_pSwapChain->Present(1, 0); 
+    }
+
+    detener_captura();
+    if (alldevs) pcap_freealldevs(alldevs);
+
+    ImGui_ImplDX11_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+    CleanupDeviceD3D();
+    ::DestroyWindow(hwnd);
+    ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
+    return 0;
+}
+
+// Win32 message handler
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+        return true;
+    switch (msg) {
+    case WM_SIZE:
+        if (wParam == SIZE_MINIMIZED) return 0;
+        g_ResizeWidth = (UINT)LOWORD(lParam);
+        g_ResizeHeight = (UINT)HIWORD(lParam);
+        return 0;
+    case WM_SYSCOMMAND:
+        if ((wParam & 0xfff0) == SC_KEYMENU) return 0;
+        break;
+    case WM_DESTROY:
+        ::PostQuitMessage(0);
+        return 0;
+    }
+    return ::DefWindowProcW(hWnd, msg, wParam, lParam);
+}
+
+// Funciones boilerplate de DirectX11
+bool CreateDeviceD3D(HWND hWnd) {
+    DXGI_SWAP_CHAIN_DESC sd;
+    ZeroMemory(&sd, sizeof(sd));
+    sd.BufferCount = 2;
+    sd.BufferDesc.Width = 0;
+    sd.BufferDesc.Height = 0;
+    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.BufferDesc.RefreshRate.Numerator = 60;
+    sd.BufferDesc.RefreshRate.Denominator = 1;
+    sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.OutputWindow = hWnd;
+    sd.SampleDesc.Count = 1;
+    sd.SampleDesc.Quality = 0;
+    sd.Windowed = TRUE;
+    sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
+    UINT createDeviceFlags = 0;
+    D3D_FEATURE_LEVEL featureLevel;
+    const D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0, };
+    HRESULT res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
+    if (res == DXGI_ERROR_UNSUPPORTED)
+        res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, createDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
+    if (res != S_OK) return false;
+    CreateRenderTarget();
+    return true;
+}
+void CleanupDeviceD3D() {
+    CleanupRenderTarget();
+    if (g_pSwapChain) { g_pSwapChain->Release(); g_pSwapChain = nullptr; }
+    if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release(); g_pd3dDeviceContext = nullptr; }
+    if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
+}
+void CreateRenderTarget() {
+    ID3D11Texture2D* pBackBuffer;
+    g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
+    g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, &g_mainRenderTargetView);
+    pBackBuffer->Release();
+}
+void CleanupRenderTarget() {
+    if (g_mainRenderTargetView) { g_mainRenderTargetView->Release(); g_mainRenderTargetView = nullptr; }
+}

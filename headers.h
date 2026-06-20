@@ -34,6 +34,91 @@ struct tcp_header {          // para tcp
     // se pueden agregar mas campos si ocupamos analizar mas banderas o cosas asi
 } __attribute__((packed));
 
+struct udp_header {
+    uint16_t uh_sport;
+    uint16_t uh_dport;
+    uint16_t uh_ulen;
+    uint16_t uh_sum;
+} __attribute__((packed));
 
+struct icmp_header {
+    uint8_t type;
+    uint8_t code;
+    uint16_t checksum;
+    uint16_t id;
+    uint16_t sequence;
+} __attribute__((packed));
+
+struct arp_header {
+    uint16_t htype;
+    uint16_t ptype;
+    uint8_t hlen;
+    uint8_t plen;
+    uint16_t oper;
+    uint8_t sha[6];
+    uint8_t spa[4];
+    uint8_t tha[6];
+    uint8_t tpa[4];
+} __attribute__((packed));
+
+struct ipv6_header {
+    uint32_t vtf; // version, traffic class, flow label
+    uint16_t payload_len;
+    uint8_t next_header;
+    uint8_t hop_limit;
+    uint8_t src[16];
+    uint8_t dst[16];
+} __attribute__((packed));
+
+typedef struct {
+    int tcp;
+    int udp;
+    int icmp;
+    int arp;
+    int other;
+    int total;
+} ProtocolStats;
+
+extern ProtocolStats global_stats;
+
+// Estructura interna para almacenar temporalmente los paquetes capturados
+typedef struct {
+    int id;
+    char src_ip[INET_ADDRSTRLEN];
+    char dst_ip[INET_ADDRSTRLEN];
+    int protocol;
+    int length;
+    char detalle[1024];
+    char raw_hex[2048];
+} PacketMemory;
+
+#define MAX_PACKETS 10000
+
+#ifdef __cplusplus
+#include <vector>
+#include <mutex>
+#include <string>
+
+extern std::vector<PacketMemory> historial_paquetes;
+extern std::mutex historial_mutex;
+
+#else
+extern PacketMemory historial_paquetes[MAX_PACKETS];
+extern int total_paquetes;
+#endif
+
+// Funciones expuestas
+void iniciar_captura(pcap_t *dev, int link_len);
+void detener_captura();
+void exportar_csv();
+int aplicar_filtro(const char* filter_exp);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+pcap_t* MostrarSelectorInterfaces(void* hInstance, int *out_link_length);
+#ifdef __cplusplus
+}
+#endif
 
 #endif
