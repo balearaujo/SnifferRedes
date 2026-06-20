@@ -92,12 +92,14 @@ struct PacketMemory {
     double timestamp;
     std::string src_ip;
     std::string dst_ip;
+    std::string protocol_name;
     int src_port;
     int dst_port;
-    std::string protocol_name;
     int length;
     std::string detalle;
     std::string raw_hex;
+    bool is_vulnerable;
+    std::string plain_text_payload;
 };
 
 extern std::vector<PacketMemory> historial_paquetes;

@@ -65,6 +65,8 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
     pkt.src_port = 0;
     pkt.dst_port = 0;
     pkt.protocol_name = "Unknown";
+    pkt.is_vulnerable = false;
+    pkt.plain_text_payload = "";
 
     int es_ipv4 = 0;
     const u_char *ip_ptr = NULL;
@@ -142,6 +144,26 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 char sub_tcp[512];
                 sprintf(sub_tcp, "\r\n=== CAPA DE TRANSPORTE (TCP) ===\r\n|- Puerto Origen: %d\r\n|- Puerto Destino: %d\r\n|- Numero Secuencia: %u\r\n|- Numero ACK: %u\r\n", sport, dport, ntohl(tcp_hdr->th_seq), ntohl(tcp_hdr->th_ack));
                 strcat(buffer_estructura, sub_tcp);
+
+                if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
+                    strcat(buffer_estructura, "\r\n[!] ADVERTENCIA: TRAFICO VULNERABLE (Texto Plano Detectado) [!]\r\n");
+                    pkt.is_vulnerable = true;
+                    
+                    int tcp_hdr_len = (tcp_hdr->th_off_x2 >> 4) * 4;
+                    int payload_offset = 40 + tcp_hdr_len;
+                    int p_len = payload_len - tcp_hdr_len;
+                    if (p_len > 0) {
+                        const u_char* payload_data = packet + 14 + 40 + tcp_hdr_len;
+                        strcat(buffer_estructura, "\r\n[PAYLOAD EXTRAIDO]\r\n");
+                        char temp_str[2] = {0};
+                        for (int i = 0; i < p_len && (14 + 40 + tcp_hdr_len + i) < (int)pkthdr->caplen; i++) {
+                            u_char c = payload_data[i];
+                            if (c >= 32 && c <= 126) { pkt.plain_text_payload += (char)c; temp_str[0] = (char)c; strcat(buffer_estructura, temp_str); }
+                            else if (c == '\n' || c == '\r') { pkt.plain_text_payload += (char)c; temp_str[0] = (char)c; strcat(buffer_estructura, temp_str); }
+                            else { pkt.plain_text_payload += "."; strcat(buffer_estructura, "."); }
+                        }
+                    }
+                }
             } else if (ip6->next_header == 17) { // UDP
                 global_stats.other--; global_stats.udp++;
                 pkt.protocol_name = "UDP";
@@ -226,6 +248,23 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
 
         if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
             strcat(buffer_estructura, "\r\n[!] ADVERTENCIA: TRAFICO VULNERABLE (Texto Plano Detectado) [!]\r\n");
+            pkt.is_vulnerable = true;
+            
+            // Extract Payload
+            int tcp_hdr_len = (tcp_hdr->th_off_x2 >> 4) * 4;
+            int payload_offset = ip_hdr_len + tcp_hdr_len;
+            int payload_len = ntohs(ip_hdr->ip_len) - payload_offset;
+            if (payload_len > 0) {
+                const u_char* payload_ptr = ip_ptr + payload_offset;
+                strcat(buffer_estructura, "\r\n[PAYLOAD EXTRAIDO]\r\n");
+                char temp_str[2] = {0};
+                for (int i = 0; i < payload_len; i++) {
+                    u_char c = payload_ptr[i];
+                    if (c >= 32 && c <= 126) { pkt.plain_text_payload += (char)c; temp_str[0] = (char)c; strcat(buffer_estructura, temp_str); }
+                    else if (c == '\n' || c == '\r') { pkt.plain_text_payload += (char)c; temp_str[0] = (char)c; strcat(buffer_estructura, temp_str); }
+                    else { pkt.plain_text_payload += "."; strcat(buffer_estructura, "."); }
+                }
+            }
         }
         
     } else if (ip_hdr->ip_p == 17) { 

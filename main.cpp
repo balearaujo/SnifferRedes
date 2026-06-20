@@ -35,9 +35,11 @@ pcap_if_t *alldevs = nullptr;
 char errbuf[PCAP_ERRBUF_SIZE];
 bool show_pie_chart = true;
 bool show_io_graph = false;
+bool show_vulnerable_tab = false;
 float io_graph_history[120] = {0};
 double last_io_time = 0;
 unsigned long long last_total_bytes = 0;
+ImFont* monospace_font = nullptr;
 int selected_packet_index = -1;
 char filter_ip_src[64] = "";
 char filter_ip_dst[64] = "";
@@ -48,6 +50,10 @@ const char* proto_options[] = { "Todos", "TCP", "UDP", "ICMP", "ARP", "IPv6", "H
 
 extern volatile bool capture_running;
 extern std::chrono::steady_clock::time_point capture_start_time;
+
+void render_hex_view(const std::string& hex_str) {
+    ImGui::TextUnformatted(hex_str.c_str());
+}
 
 void DrawPieChart(ImDrawList* draw_list, ImVec2 center, float radius, float start_angle, float end_angle, ImU32 color) {
     if (end_angle - start_angle <= 0.0f) return;
@@ -126,10 +132,14 @@ int main(int, char**) {
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     
     // Cargar fuente TTF si existe (mejorando 200% el estilo pixelado)
-    ImFont* main_font = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
-    if (!main_font) {
+    ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
+    if (!font) {
         io.Fonts->AddFontDefault();
     }
+    
+    // Load Monospace Font for Hexdump and Detalle
+    monospace_font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\consola.ttf", 16.0f);
+    if (!monospace_font) monospace_font = io.Fonts->AddFontDefault();
 
     ImGui::StyleColorsDark();
 
@@ -235,13 +245,18 @@ int main(int, char**) {
             }
 
             ImGui::SameLine();
-            if (ImGui::Button(show_pie_chart ? "Ocultar Pie Chart" : "Mostrar Pie Chart")) {
+            if (ImGui::Button(show_pie_chart ? "Ocultar Grafico Pastel" : "Mostrar Grafico Pastel")) {
                 show_pie_chart = !show_pie_chart;
             }
             ImGui::SameLine();
-            if (ImGui::Button(show_io_graph ? "Ocultar I/O Graph" : "Mostrar I/O Graph")) {
+            if (ImGui::Button(show_io_graph ? "Ocultar Grafico E/S" : "Mostrar Grafico E/S")) {
                 show_io_graph = !show_io_graph;
             }
+            ImGui::SameLine();
+            if (ImGui::Button(show_vulnerable_tab ? "Ocultar Vulnerables" : "Mostrar Vulnerables")) {
+                show_vulnerable_tab = !show_vulnerable_tab;
+            }
+            
             ImGui::SameLine();
             ImGui::Text("Filtros:");
             ImGui::SameLine();
@@ -269,14 +284,18 @@ int main(int, char**) {
             ImGui::Separator();
 
             // Layout
-            float right_panel_width = (show_pie_chart || show_io_graph) ? 300.0f : 0.0f;
+            float right_panel_width = (show_pie_chart || show_io_graph) ? 350.0f : 0.0f;
             float left_panel_width = ImGui::GetContentRegionAvail().x - right_panel_width;
             if (show_pie_chart || show_io_graph) left_panel_width -= ImGui::GetStyle().ItemSpacing.x;
 
             ImGui::BeginChild("LeftPanel", ImVec2(left_panel_width, 0), false);
             
+            float left_panel_y = ImGui::GetContentRegionAvail().y;
+            float area1_h = show_vulnerable_tab ? left_panel_y * 0.35f : left_panel_y * 0.5f;
+            float area23_h = show_vulnerable_tab ? left_panel_y * 0.35f : left_panel_y * 0.5f;
+            
             // Area 1: Lista (mitad superior)
-            ImGui::BeginChild("Area1", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.5f), true);
+            ImGui::BeginChild("Area1", ImVec2(0, area1_h), true);
             
             // Forzar texto negro y fondo blanco/gris para la tabla (para que los colores pastel se vean bien)
             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
@@ -342,52 +361,79 @@ int main(int, char**) {
             ImGui::PopStyleColor(2); // Restore text color
             ImGui::EndChild();
 
-            // Area 2 & 3: Detalles (mitad inferior)
-            ImGui::BeginChild("Area23", ImVec2(0, 0), false);
-            ImGui::BeginChild("Area2", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.5f), true);
+            // Area 2 & 3: Detalles
+            ImGui::BeginChild("Area23", ImVec2(0, area23_h), false);
+            
+            ImGui::BeginChild("Area2", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, 0), true);
             if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
+                if (monospace_font) ImGui::PushFont(monospace_font);
                 ImGui::TextUnformatted(historial_paquetes[selected_packet_index].detalle.c_str());
-            } else {
-                ImGui::Text("Selecciona un paquete...");
+                if (monospace_font) ImGui::PopFont();
             }
             ImGui::EndChild();
-            
+
+            ImGui::SameLine();
             ImGui::BeginChild("Area3", ImVec2(0, 0), true);
             if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
-                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].raw_hex.c_str());
+                if (monospace_font) ImGui::PushFont(monospace_font);
+                render_hex_view(historial_paquetes[selected_packet_index].raw_hex);
+                if (monospace_font) ImGui::PopFont();
             } else {
                 ImGui::Text("Volcado Hexadecimal...");
             }
             ImGui::EndChild();
             ImGui::EndChild(); // Area23
 
+            // Area 4: Trafico Vulnerable (Fondo del panel izquierdo)
+            if (show_vulnerable_tab) {
+                ImGui::BeginChild("Area4", ImVec2(0, 0), true);
+                ImGui::Text("Trafico Vulnerable (Texto Plano)");
+                ImGui::Separator();
+                
+                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+                ImGui::PushStyleColor(ImGuiCol_TableHeaderBg, IM_COL32(255, 180, 180, 255));
+                if (ImGui::BeginTable("table_vuln", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
+                    ImGui::TableSetupScrollFreeze(0, 1);
+                    ImGui::TableSetupColumn("No.");
+                    ImGui::TableSetupColumn("Tiempo");
+                    ImGui::TableSetupColumn("IP Origen");
+                    ImGui::TableSetupColumn("IP Destino");
+                    ImGui::TableSetupColumn("Proto");
+                    ImGui::TableSetupColumn("Longitud");
+                    ImGui::TableHeadersRow();
+
+                    std::lock_guard<std::mutex> lock(historial_mutex);
+                    for (size_t i = 0; i < historial_paquetes.size(); i++) {
+                        if (!historial_paquetes[i].is_vulnerable) continue;
+                        
+                        ImGui::TableNextRow();
+                        ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(255, 230, 230, 255));
+                        
+                        if (ImGui::TableSetColumnIndex(0)) {
+                            char buf[32]; sprintf(buf, "%d", historial_paquetes[i].id);
+                            if (ImGui::Selectable(buf, selected_packet_index == (int)i, ImGuiSelectableFlags_SpanAllColumns)) {
+                                selected_packet_index = i;
+                            }
+                        }
+                        if (ImGui::TableSetColumnIndex(1)) {
+                            char buf[32]; sprintf(buf, "%.6f", historial_paquetes[i].timestamp);
+                            ImGui::TextUnformatted(buf);
+                        }
+                        if (ImGui::TableSetColumnIndex(2)) ImGui::TextUnformatted(historial_paquetes[i].src_ip.c_str());
+                        if (ImGui::TableSetColumnIndex(3)) ImGui::TextUnformatted(historial_paquetes[i].dst_ip.c_str());
+                        if (ImGui::TableSetColumnIndex(4)) ImGui::TextUnformatted(historial_paquetes[i].protocol_name.c_str());
+                        if (ImGui::TableSetColumnIndex(5)) ImGui::Text("%d", historial_paquetes[i].length);
+                    }
+                    ImGui::EndTable();
+                }
+                ImGui::PopStyleColor(2);
+                ImGui::EndChild();
+            }
+
             ImGui::EndChild(); // LeftPanel
             
-            // Area 4: Right Panel (Graphs)
+            // Right Panel (Graphs)
             if (show_pie_chart || show_io_graph) {
-                ImGui::SameLine();
-                ImGui::BeginChild("RightPanel", ImVec2(right_panel_width, 0), true);
-
-                if (show_io_graph) {
-                    ImGui::Text("I/O Graph (Ancho de Banda)");
-                    ImGui::Separator();
-                    
-                    double current_time = ImGui::GetTime();
-                    if (current_time - last_io_time >= 1.0) { // every 1 second
-                        unsigned long long current_total = global_stats.total_bytes;
-                        unsigned long long diff = current_total - last_total_bytes;
-                        // shift array
-                        for (int i = 0; i < 119; i++) {
-                            io_graph_history[i] = io_graph_history[i + 1];
-                        }
-                        io_graph_history[119] = (float)diff;
-                        last_total_bytes = current_total;
-                        last_io_time = current_time;
-                    }
-                    
-                    ImGui::PlotLines("##iograph", io_graph_history, 120, 0, "Bytes/s", 0.0f, FLT_MAX, ImVec2(right_panel_width - 15, 120));
-                    ImGui::Spacing();
-                }
 
                 if (show_pie_chart) {
                     ImGui::Text("Distribucion de Protocolos");
