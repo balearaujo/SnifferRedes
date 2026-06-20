@@ -28,13 +28,14 @@ void exportar_csv() {
     if (GetSaveFileNameA(&ofn) == TRUE) {
         FILE *fp = fopen(ofn.lpstrFile, "w");
         if (fp != NULL) {
-            fprintf(fp, "No.,IP Origen,IP Destino,Protocolo,Longitud\n");
+            fprintf(fp, "No.,Tiempo,IP Origen,IP Destino,Protocolo,Longitud\n");
             for (size_t i = 0; i < historial_paquetes.size(); i++) {
-                fprintf(fp, "%d,%s,%s,%d,%d\n",
+                fprintf(fp, "%d,%.6f,%s,%s,%s,%d\n",
                         historial_paquetes[i].id,
-                        historial_paquetes[i].src_ip,
-                        historial_paquetes[i].dst_ip,
-                        historial_paquetes[i].protocol,
+                        historial_paquetes[i].timestamp,
+                        historial_paquetes[i].src_ip.c_str(),
+                        historial_paquetes[i].dst_ip.c_str(),
+                        historial_paquetes[i].protocol_name.c_str(),
                         historial_paquetes[i].length);
             }
             fclose(fp);

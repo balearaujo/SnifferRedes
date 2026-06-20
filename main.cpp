@@ -35,7 +35,14 @@ pcap_if_t *alldevs = nullptr;
 char errbuf[PCAP_ERRBUF_SIZE];
 bool show_pie_chart = true;
 int selected_packet_index = -1;
-char filter_input[256] = "";
+char filter_ip_src[64] = "";
+char filter_ip_dst[64] = "";
+char filter_port_src[16] = "";
+char filter_port_dst[16] = "";
+int filter_proto_index = 0;
+const char* proto_options[] = { "Todos", "TCP", "UDP", "ICMP", "ARP", "IPv6", "HTTP", "TLSv1.3", "DNS", "SSDP", "DHCP" };
+
+extern volatile bool capture_running;
 
 void DrawPieChart(ImDrawList* draw_list, ImVec2 center, float radius, float start_angle, float end_angle, ImU32 color) {
     if (end_angle - start_angle <= 0.0f) return;
@@ -85,6 +92,16 @@ void RenderPieChartPanel() {
     }
 }
 
+// Custom strstr case-insensitive
+bool contains_icase(const std::string& str, const std::string& substr) {
+    auto it = std::search(
+        str.begin(), str.end(),
+        substr.begin(), substr.end(),
+        [](char ch1, char ch2) { return std::toupper(ch1) == std::toupper(ch2); }
+    );
+    return (it != str.end());
+}
+
 int main(int, char**) {
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Example", nullptr };
     ::RegisterClassExW(&wc);
@@ -102,7 +119,14 @@ int main(int, char**) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    ImGui::StyleColorsDark();
+    
+    // Cargar fuente TTF si existe (mejorando 200% el estilo pixelado)
+    ImFont* main_font = io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 18.0f);
+    if (!main_font) {
+        io.Fonts->AddFontDefault();
+    }
+
+    ImGui::StyleColorsLight();
 
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
@@ -145,9 +169,9 @@ int main(int, char**) {
                 if (ImGui::BeginListBox("##interfaces", ImVec2(-FLT_MIN, -FLT_MIN))) {
                     for (pcap_if_t *d = alldevs; d != nullptr; d = d->next) {
                         char label[512];
-                        sprintf(label, "%s - %s", d->name, d->description ? d->description : "Sin descripcion");
+                        sprintf(label, "%s", d->description ? d->description : "Interfaz Desconocida");
                         if (ImGui::Selectable(label)) {
-                            pcap_t *capdev = pcap_open_live(d->name, 65536, 1, 1, errbuf); // TIMEOUT 1 ms!
+                            pcap_t *capdev = pcap_open_live(d->name, 65536, 1, 1, errbuf); 
                             if (capdev) {
                                 int link_hdr_type = pcap_datalink(capdev);
                                 int link_len = (link_hdr_type == DLT_EN10MB) ? 14 : ((link_hdr_type == DLT_NULL) ? 4 : 0);
@@ -168,6 +192,16 @@ int main(int, char**) {
                 currentState = STATE_SELECT_INTERFACE;
             }
             ImGui::SameLine();
+            
+            if (capture_running) {
+                if (ImGui::Button("Pausar Captura", ImVec2(120, 0))) capture_running = false;
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+                if (ImGui::Button("Reanudar Captura", ImVec2(120, 0))) capture_running = true;
+                ImGui::PopStyleColor();
+            }
+
+            ImGui::SameLine();
             if (ImGui::Button("Exportar CSV")) {
                 exportar_csv();
             }
@@ -176,13 +210,28 @@ int main(int, char**) {
                 show_pie_chart = !show_pie_chart;
             }
             ImGui::SameLine();
-            ImGui::Text("Filtro:");
+            ImGui::Text("Filtros:");
             ImGui::SameLine();
-            ImGui::SetNextItemWidth(300);
-            ImGui::InputText("##filtro", filter_input, IM_ARRAYSIZE(filter_input));
+            
+            ImGui::SetNextItemWidth(120);
+            ImGui::InputTextWithHint("##ip_src", "IP Origen", filter_ip_src, IM_ARRAYSIZE(filter_ip_src));
             ImGui::SameLine();
-            if (ImGui::Button("Aplicar Filtro")) {
-                aplicar_filtro(filter_input);
+            ImGui::SetNextItemWidth(120);
+            ImGui::InputTextWithHint("##ip_dst", "IP Destino", filter_ip_dst, IM_ARRAYSIZE(filter_ip_dst));
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80);
+            ImGui::InputTextWithHint("##p_src", "P. Origen", filter_port_src, IM_ARRAYSIZE(filter_port_src));
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(80);
+            ImGui::InputTextWithHint("##p_dst", "P. Destino", filter_port_dst, IM_ARRAYSIZE(filter_port_dst));
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(100);
+            ImGui::Combo("##proto", &filter_proto_index, proto_options, IM_ARRAYSIZE(proto_options));
+
+            ImGui::SameLine();
+            ImGui::TextDisabled("(?)");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Filtra los paquetes seleccionando IPs, Puertos o el Protocolo directamente.");
             }
             ImGui::Separator();
 
@@ -195,9 +244,10 @@ int main(int, char**) {
             
             // Area 1: Lista (mitad superior)
             ImGui::BeginChild("Area1", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.5f), true);
-            if (ImGui::BeginTable("table1", 5, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY)) {
+            if (ImGui::BeginTable("table1", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
                 ImGui::TableSetupScrollFreeze(0, 1);
                 ImGui::TableSetupColumn("No.");
+                ImGui::TableSetupColumn("Tiempo");
                 ImGui::TableSetupColumn("IP Origen");
                 ImGui::TableSetupColumn("IP Destino");
                 ImGui::TableSetupColumn("Proto");
@@ -206,18 +256,48 @@ int main(int, char**) {
 
                 std::lock_guard<std::mutex> lock(historial_mutex);
                 for (size_t i = 0; i < historial_paquetes.size(); i++) {
+                    // Display Filter Logic
+                    bool match = true;
+                    if (filter_ip_src[0] != '\0' && !contains_icase(historial_paquetes[i].src_ip, filter_ip_src)) match = false;
+                    if (filter_ip_dst[0] != '\0' && !contains_icase(historial_paquetes[i].dst_ip, filter_ip_dst)) match = false;
+                    if (filter_port_src[0] != '\0' && std::to_string(historial_paquetes[i].src_port) != filter_port_src) match = false;
+                    if (filter_port_dst[0] != '\0' && std::to_string(historial_paquetes[i].dst_port) != filter_port_dst) match = false;
+                    if (filter_proto_index > 0 && !contains_icase(historial_paquetes[i].protocol_name, proto_options[filter_proto_index])) match = false;
+                    
+                    if (!match) continue; // Skip rendering
+
                     ImGui::TableNextRow();
+                    
+                    ImU32 row_bg_color = IM_COL32(255, 255, 255, 255); // Default Light
+                    std::string p_name = historial_paquetes[i].protocol_name;
+                    if (p_name == "TCP" || p_name == "HTTP" || p_name == "TLSv1.3") row_bg_color = IM_COL32(231, 230, 255, 255);
+                    else if (p_name == "UDP" || p_name == "DNS" || p_name == "SSDP" || p_name == "DHCP") row_bg_color = IM_COL32(218, 238, 255, 255);
+                    else if (p_name == "ICMP") row_bg_color = IM_COL32(252, 224, 255, 255);
+                    else if (p_name == "ARP") row_bg_color = IM_COL32(250, 240, 215, 255);
+                    else if (p_name == "IPv6") row_bg_color = IM_COL32(240, 240, 240, 255);
+                    
+                    ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, row_bg_color);
                     if (ImGui::TableSetColumnIndex(0)) {
                         char buf[32]; sprintf(buf, "%d", historial_paquetes[i].id);
                         if (ImGui::Selectable(buf, selected_packet_index == (int)i, ImGuiSelectableFlags_SpanAllColumns)) {
                             selected_packet_index = i;
                         }
                     }
-                    if (ImGui::TableSetColumnIndex(1)) ImGui::TextUnformatted(historial_paquetes[i].src_ip);
-                    if (ImGui::TableSetColumnIndex(2)) ImGui::TextUnformatted(historial_paquetes[i].dst_ip);
-                    if (ImGui::TableSetColumnIndex(3)) ImGui::Text("%d", historial_paquetes[i].protocol);
-                    if (ImGui::TableSetColumnIndex(4)) ImGui::Text("%d", historial_paquetes[i].length);
+                    if (ImGui::TableSetColumnIndex(1)) {
+                        char buf[32]; sprintf(buf, "%.6f", historial_paquetes[i].timestamp);
+                        ImGui::TextUnformatted(buf);
+                    }
+                    if (ImGui::TableSetColumnIndex(2)) ImGui::TextUnformatted(historial_paquetes[i].src_ip.c_str());
+                    if (ImGui::TableSetColumnIndex(3)) ImGui::TextUnformatted(historial_paquetes[i].dst_ip.c_str());
+                    if (ImGui::TableSetColumnIndex(4)) ImGui::TextUnformatted(historial_paquetes[i].protocol_name.c_str());
+                    if (ImGui::TableSetColumnIndex(5)) ImGui::Text("%d", historial_paquetes[i].length);
                 }
+
+                // Lógica de Auto-Scroll Inteligente
+                if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 10.0f) {
+                    ImGui::SetScrollHereY(1.0f);
+                }
+
                 ImGui::EndTable();
             }
             ImGui::EndChild();
@@ -226,7 +306,7 @@ int main(int, char**) {
             ImGui::BeginChild("Area23", ImVec2(0, 0), false);
             ImGui::BeginChild("Area2", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.5f), true);
             if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
-                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].detalle);
+                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].detalle.c_str());
             } else {
                 ImGui::Text("Selecciona un paquete...");
             }
@@ -234,7 +314,7 @@ int main(int, char**) {
             
             ImGui::BeginChild("Area3", ImVec2(0, 0), true);
             if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
-                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].raw_hex);
+                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].raw_hex.c_str());
             } else {
                 ImGui::Text("Volcado Hexadecimal...");
             }

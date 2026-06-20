@@ -81,29 +81,28 @@ typedef struct {
 
 extern ProtocolStats global_stats;
 
-// Estructura interna para almacenar temporalmente los paquetes capturados
-typedef struct {
-    int id;
-    char src_ip[INET_ADDRSTRLEN];
-    char dst_ip[INET_ADDRSTRLEN];
-    int protocol;
-    int length;
-    char detalle[1024];
-    char raw_hex[2048];
-} PacketMemory;
-
-#define MAX_PACKETS 10000
-
 #ifdef __cplusplus
 #include <vector>
 #include <mutex>
 #include <string>
 
+struct PacketMemory {
+    int id;
+    double timestamp;
+    std::string src_ip;
+    std::string dst_ip;
+    int src_port;
+    int dst_port;
+    std::string protocol_name;
+    int length;
+    std::string detalle;
+    std::string raw_hex;
+};
+
 extern std::vector<PacketMemory> historial_paquetes;
 extern std::mutex historial_mutex;
 
 #else
-extern PacketMemory historial_paquetes[MAX_PACKETS];
 extern int total_paquetes;
 #endif
 
