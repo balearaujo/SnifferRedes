@@ -33,10 +33,10 @@
                 "-ldwmapi",
                 "-mwindows",
                 "-o",
-                "${fileDirname}\\SnifferPro.exe"
+                "${workspaceFolder}\\Sniffer.exe"
             ],
             "options": {
-                "cwd": "${fileDirname}"
+                "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [
                 "$gcc"
