@@ -123,13 +123,13 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
 
             char sub_ip6[1024];
             sprintf(sub_ip6, "=== CAPA DE RED (IPv6) ===\r\n"
-                             "|- Version: %d\r\n"
-                             "|- Traffic Class: 0x%02X\r\n"
-                             "|- Flow Label: 0x%05X\r\n"
-                             "|- Payload Length: %d\r\n"
-                             "|- Next Header: %d\r\n"
-                             "|- Hop Limit: %d\r\n", 
-                             version, traffic_class, flow_label, payload_len, ip6->next_header, ip6->hop_limit);
+                            "|- Version: %d\r\n"
+                            "|- Traffic Class: 0x%02X\r\n"
+                            "|- Flow Label: 0x%05X\r\n"
+                            "|- Payload Length: %d\r\n"
+                            "|- Next Header: %d\r\n"
+                            "|- Hop Limit: %d\r\n", 
+                            version, traffic_class, flow_label, payload_len, ip6->next_header, ip6->hop_limit);
             buffer_estructura += sub_ip6;
 
             const u_char* payload_ptr = packet + 14 + 40; // 40 ies estandar para IPv6 header TAM
@@ -226,10 +226,10 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
 
     char sub_ipv4[1024];
     sprintf(sub_ipv4, "=== CAPA DE RED (IPv4) ===\r\n"
-                      "|- Longitud Total: %d\r\n"
-                      "|- TTL: %d\r\n"
-                      "|- Protocolo Interno: %d\r\n", 
-                      ntohs(ip_hdr->ip_len), ip_hdr->ip_ttl, ip_hdr->ip_p);
+                    "|- Longitud Total: %d\r\n"
+                    "|- TTL: %d\r\n"
+                    "|- Protocolo Interno: %d\r\n", 
+                    ntohs(ip_hdr->ip_len), ip_hdr->ip_ttl, ip_hdr->ip_p);
     buffer_estructura += sub_ipv4;
 
     if (ip_hdr->ip_p == 6) { 

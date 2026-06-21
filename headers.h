@@ -70,6 +70,7 @@ struct ipv6_header {
     uint8_t dst[16];
 } __attribute__((packed));
 
+//contadores de estadisticas
 typedef struct {
     int tcp;
     int udp;
@@ -87,23 +88,24 @@ extern ProtocolStats global_stats;
 #include <mutex>
 #include <string>
 
-struct PacketMemory {
-    int id;
-    double timestamp;
-    std::string src_ip;
+struct PacketMemory { //registro completo de cada paquete
+    int id; //id
+    double timestamp; //segundo en q se capturo
+    std::string src_ip; //src ip
     std::string dst_ip;
-    std::string protocol_name;
+    std::string protocol_name; //nombre del protocolo
     int src_port;
     int dst_port;
-    int length;
-    std::string detalle;
-    std::string raw_hex;
-    bool is_vulnerable;
-    std::string plain_text_payload;
+    int length; //tamaño total del paquete medido en bytes
+    std::string detalle; //Textodecodificado de las cabeceras
+    std::string raw_hex; //Contiene la cadena de texto con Hexdump exacto
+    bool is_vulnerable; //Usa una bandera de verdadero/falso
+    std::string plain_text_payload; //si el paquete es vulnerable se guarda el texto
 };
 
-extern std::vector<PacketMemory> historial_paquetes;
-extern std::mutex historial_mutex;
+extern std::vector<PacketMemory> historial_paquetes; //arreglo dinamico donde se guarda
+extern std::mutex historial_mutex; //mutex es un cerrojo de seguridad, para que los hilos no
+//accedan al mismo tiempo
 
 #else
 extern int total_paquetes;

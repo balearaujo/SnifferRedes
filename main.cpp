@@ -196,9 +196,9 @@ int main(int, char**) {
                         char label[512];
                         sprintf(label, "%s", d->description ? d->description : "Interfaz Desconocida"); //mostrar descripción
                         if (ImGui::Selectable(label)) { //si el usuario selecciona
-                            pcap_t *capdev = pcap_open_live(d->name, 65536, 1, 1, errbuf); //guardar el usuario
+                            pcap_t *capdev = pcap_open_live(d->name, 65536, 1, 1, errbuf); //Abre la tarjeta seleccionada
                             if (capdev) {
-                                int link_hdr_type = pcap_datalink(capdev);
+                                int link_hdr_type = pcap_datalink(capdev); //consigue el tipo de interfaz
                                 int link_len = (link_hdr_type == DLT_EN10MB) ? 14 : ((link_hdr_type == DLT_NULL) ? 4 : 0); //identifica tipo de encabezado
                                 //Ethernet-> 14 bytes      //Loopback 4 bytes   
                                 iniciar_captura(capdev, link_len); //iniciamos proceso
@@ -223,7 +223,7 @@ int main(int, char**) {
                 if (ImGui::Button("Pausar Captura", ImVec2(120, 0))) capture_running = false; //cambiamos el estado de la captura
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
-                if (ImGui::Button("Reanudar Captura", ImVec2(120, 0))) capture_running = true;
+                if (ImGui::Button("Reanudar Captura", ImVec2(120, 0))) capture_running = true; 
                 ImGui::PopStyleColor();
             }
 
@@ -235,16 +235,17 @@ int main(int, char**) {
             if (ImGui::Button("Reiniciar Captura")) { //reimiciarcaptura
                 ImGui::OpenPopup("Confirmar Reinicio");
             }
+            //metodo de confitmacion
             if (ImGui::BeginPopupModal("Confirmar Reinicio", NULL, ImGuiWindowFlags_AlwaysAutoResize)) { 
                 ImGui::Text("¿Estas seguro de que deseas borrar todos los paquetes?\nEsta accion no se puede deshacer.");
                 ImGui::Separator();
-                if (ImGui::Button("Si, Reiniciar", ImVec2(120, 0))) {
-                    std::lock_guard<std::mutex> lock(historial_mutex);
-                    historial_paquetes.clear();
-                    global_stats = {0};
-                    capture_start_time = std::chrono::steady_clock::now();
-                    for(int i=0; i<120; i++) io_graph_history[i] = 0;
-                    last_total_bytes = 0;
+                if (ImGui::Button("Si, Reiniciar", ImVec2(120, 0))) { //si si quiere reiniciar
+                    std::lock_guard<std::mutex> lock(historial_mutex); //bloquear
+                    historial_paquetes.clear(); //limpiar el vector
+                    global_stats = {0}; //reseteo de contadores
+                    capture_start_time = std::chrono::steady_clock::now(); //limpieza de grafica
+                    for(int i=0; i<120; i++) io_graph_history[i] = 0; //teseteo de los bytes
+                    last_total_bytes = 0; //reseteo bytes
                     ImGui::CloseCurrentPopup();
                 }
                 ImGui::SetItemDefaultFocus();
@@ -263,7 +264,7 @@ int main(int, char**) {
                 ImGui::MenuItem("Trafico Vulnerable", NULL, &show_vulnerable_tab);
                 ImGui::EndPopup();
             }
-            
+            //separador visual de los filtros
             ImGui::SameLine();
             ImGui::Text("Filtros:");
             ImGui::SameLine();
