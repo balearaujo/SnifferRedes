@@ -148,21 +148,29 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 buffer_estructura += sub_tcp;
 
                 if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
-                    buffer_estructura += "\r\n[!] ADVERTENCIA: TRAFICO VULNERABLE (Texto Plano Detectado) [!]\r\n";
-                    pkt.is_vulnerable = true;
-                    
                     int tcp_hdr_len = (tcp_hdr->th_off_x2 >> 4) * 4;
                     int payload_offset = 40 + tcp_hdr_len;
                     int p_len = payload_len - tcp_hdr_len;
                     if (p_len > 0) {
                         const u_char* payload_data = packet + 14 + 40 + tcp_hdr_len;
                         buffer_estructura += "\r\n[PAYLOAD EXTRAIDO]\r\n";
-                        char temp_str[2] = {0};
                         for (int i = 0; i < p_len && (14 + 40 + tcp_hdr_len + i) < (int)pkthdr->caplen; i++) {
                             u_char c = payload_data[i];
                             if (c >= 32 && c <= 126) { pkt.plain_text_payload += (char)c; buffer_estructura += (char)c; }
                             else if (c == '\n' || c == '\r') { pkt.plain_text_payload += (char)c; buffer_estructura += (char)c; }
                             else { pkt.plain_text_payload += "."; buffer_estructura += "."; }
+                        }
+                        
+                        // Smart detection: only flag as vulnerable if actual plaintext commands are found,
+                        // o si es protocolo Telnet (23) o FTP (21) ya que estos siempre son de texto plano.
+                        if (sport == 21 || dport == 21 || sport == 23 || dport == 23 ||
+                            pkt.plain_text_payload.find("HTTP") != std::string::npos ||
+                            pkt.plain_text_payload.find("GET ") != std::string::npos ||
+                            pkt.plain_text_payload.find("POST ") != std::string::npos ||
+                            pkt.plain_text_payload.find("USER ") != std::string::npos ||
+                            pkt.plain_text_payload.find("PASS ") != std::string::npos) {
+                            
+                            pkt.is_vulnerable = true;
                         }
                     }
                 }
@@ -249,8 +257,6 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
         buffer_estructura += sub_tcp;
 
         if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
-            pkt.is_vulnerable = true;
-            
             // Extract Payload
             int tcp_hdr_len = (tcp_hdr->th_off_x2 >> 4) * 4;
             int payload_offset = ip_hdr_len + tcp_hdr_len;
@@ -258,12 +264,23 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             if (payload_len > 0) {
                 const u_char* payload_ptr = ip_ptr + payload_offset;
                 buffer_estructura += "\r\n[PAYLOAD EXTRAIDO]\r\n";
-                char temp_str[2] = {0};
                 for (int i = 0; i < payload_len; i++) {
                     u_char c = payload_ptr[i];
                     if (c >= 32 && c <= 126) { pkt.plain_text_payload += (char)c; buffer_estructura += (char)c; }
                     else if (c == '\n' || c == '\r') { pkt.plain_text_payload += (char)c; buffer_estructura += (char)c; }
                     else { pkt.plain_text_payload += "."; buffer_estructura += "."; }
+                }
+                
+                // Smart detection: only flag as vulnerable if actual plaintext commands are found,
+                // o si es protocolo Telnet (23) o FTP (21) ya que estos siempre son de texto plano.
+                if (sport == 21 || dport == 21 || sport == 23 || dport == 23 ||
+                    pkt.plain_text_payload.find("HTTP") != std::string::npos ||
+                    pkt.plain_text_payload.find("GET ") != std::string::npos ||
+                    pkt.plain_text_payload.find("POST ") != std::string::npos ||
+                    pkt.plain_text_payload.find("USER ") != std::string::npos ||
+                    pkt.plain_text_payload.find("PASS ") != std::string::npos) {
+                    
+                    pkt.is_vulnerable = true;
                 }
             }
         }
