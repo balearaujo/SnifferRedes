@@ -526,10 +526,22 @@ int main(int, char**) {
                         for (int i = 0; i < 5; i++) {
                             if (data[i] > 0) {
                                 a_max = a_min + (data[i] / total) * (3.1415926535f * 2.0f);
-                                draw_list->PathArcTo(center, radius, a_min, a_max, 32);
-                                draw_list->PathLineTo(center);
-                                draw_list->AddConvexPolyFilled(draw_list->_Path.Data, draw_list->_Path.Size, colors[i]);
-                                draw_list->PathClear();
+                                
+                                // Para evitar el bug de polígonos cóncavos en ImGui cuando una rebanada es > 180 grados,
+                                // la dividimos en partes más pequeñas (convexas).
+                                float slice_angle = a_max - a_min;
+                                int num_parts = (int)(slice_angle / 3.1415926535f) + 1;
+                                float part_angle = slice_angle / num_parts;
+                                
+                                for (int p = 0; p < num_parts; p++) {
+                                    float p_min = a_min + p * part_angle;
+                                    float p_max = a_min + (p + 1) * part_angle;
+                                    draw_list->PathArcTo(center, radius, p_min, p_max, 0); // 0 para resolución automática
+                                    draw_list->PathLineTo(center);
+                                    draw_list->AddConvexPolyFilled(draw_list->_Path.Data, draw_list->_Path.Size, colors[i]);
+                                    draw_list->PathClear();
+                                }
+                                
                                 a_min = a_max;
                             }
                         }

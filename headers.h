@@ -115,12 +115,4 @@ void detener_captura();
 void exportar_csv();
 int aplicar_filtro(const char* filter_exp);
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-pcap_t* MostrarSelectorInterfaces(void* hInstance, int *out_link_length);
-#ifdef __cplusplus
-}
-#endif
-
 #endif

@@ -10,7 +10,6 @@
                 "main.cpp",
                 "capture.cpp",
                 "utils.cpp",
-                "Dispositivos.cpp",
                 "imgui/imgui.cpp",
                 "imgui/imgui_demo.cpp",
                 "imgui/imgui_draw.cpp",
