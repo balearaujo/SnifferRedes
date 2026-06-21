@@ -312,7 +312,7 @@ int main(int, char**) {
             ImGui::PushStyleColor(ImGuiCol_TableHeaderBg, IM_COL32(200, 200, 220, 255));
             
             if (ImGui::BeginTable("table1", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable)) {
-                // Header with dark text and standard background
+                //rambla y sus  columnas con el nombres
                 ImGui::TableSetupScrollFreeze(0, 1);
                 ImGui::TableSetupColumn("No.");
                 ImGui::TableSetupColumn("Tiempo");
@@ -323,8 +323,8 @@ int main(int, char**) {
                 ImGui::TableHeadersRow();
 
                 std::lock_guard<std::mutex> lock(historial_mutex);
-                for (size_t i = 0; i < historial_paquetes.size(); i++) {
-                    // Display Filter Logic
+                for (size_t i = 0; i < historial_paquetes.size(); i++) { //todos los paquetes
+                    // Logica de filtros
                     bool match = true;
                     if (filter_ip_src[0] != '\0' && !contains_icase(historial_paquetes[i].src_ip, filter_ip_src)) match = false;
                     if (filter_ip_dst[0] != '\0' && !contains_icase(historial_paquetes[i].dst_ip, filter_ip_dst)) match = false;
@@ -336,8 +336,9 @@ int main(int, char**) {
 
                     ImGui::TableNextRow();
                     
+                    //colores segun el protocolo
                     ImU32 row_bg_color = IM_COL32(255, 255, 255, 255); // Default Light
-                    std::string p_name = historial_paquetes[i].protocol_name;
+                    std::string p_name = historial_paquetes[i].protocol_name; //irlos mostrando
                     if (p_name == "TCP" || p_name == "HTTP" || p_name == "TLSv1.3") row_bg_color = IM_COL32(231, 230, 255, 255);
                     else if (p_name == "UDP" || p_name == "DNS" || p_name == "SSDP" || p_name == "DHCP") row_bg_color = IM_COL32(218, 238, 255, 255);
                     else if (p_name == "ICMP") row_bg_color = IM_COL32(252, 224, 255, 255);
@@ -372,21 +373,21 @@ int main(int, char**) {
             ImGui::EndChild();
 
             // Area 2 & 3: Detalles
-            ImGui::BeginChild("Area23", ImVec2(0, area23_h), false);
+            ImGui::BeginChild("Area23", ImVec2(0, area23_h), false); 
             
-            ImGui::BeginChild("Area2", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
-            if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
+            ImGui::BeginChild("Area2", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, 0), true, ImGuiWindowFlags_HorizontalScrollbar); 
+            if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) { //revisar limites de la seleccion
                 if (monospace_font) ImGui::PushFont(monospace_font);
-                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].detalle.c_str());
+                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].detalle.c_str()); //se formatea el texto con el indice elegido
                 if (monospace_font) ImGui::PopFont();
             }
             ImGui::EndChild();
 
             ImGui::SameLine();
-            ImGui::BeginChild("Area3", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+            ImGui::BeginChild("Area3", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar); //volcado exadecimal
             if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
                 if (monospace_font) ImGui::PushFont(monospace_font);
-                render_hex_view(historial_paquetes[selected_packet_index].raw_hex);
+                render_hex_view(historial_paquetes[selected_packet_index].raw_hex); //el hexadecimal sin convertid¿r
                 if (monospace_font) ImGui::PopFont();
             } else {
                 ImGui::Text("Volcado Hexadecimal...");
@@ -415,7 +416,7 @@ int main(int, char**) {
 
                     std::lock_guard<std::mutex> lock(historial_mutex);
                     for (size_t i = 0; i < historial_paquetes.size(); i++) {
-                        if (!historial_paquetes[i].is_vulnerable) continue;
+                        if (!historial_paquetes[i].is_vulnerable) continue; //saltar si el historial en [i] es seguto
                         
                         ImGui::TableNextRow();
                         ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, IM_COL32(255, 230, 230, 255));
@@ -429,13 +430,14 @@ int main(int, char**) {
                         if (ImGui::TableSetColumnIndex(1)) {
                             char buf[32]; sprintf(buf, "%.6f", historial_paquetes[i].timestamp);
                             ImGui::TextUnformatted(buf);
-                        }
+                        } 
                         if (ImGui::TableSetColumnIndex(2)) ImGui::TextUnformatted(historial_paquetes[i].src_ip.c_str());
                         if (ImGui::TableSetColumnIndex(3)) ImGui::TextUnformatted(historial_paquetes[i].dst_ip.c_str());
                         if (ImGui::TableSetColumnIndex(4)) ImGui::TextUnformatted(historial_paquetes[i].protocol_name.c_str());
                         if (ImGui::TableSetColumnIndex(5)) ImGui::Text("%d", historial_paquetes[i].length);
                         if (ImGui::TableSetColumnIndex(6)) {
                             std::string snippet = historial_paquetes[i].plain_text_payload;
+                            //limpiar los saltos de línea para la concistencia de la fila
                             for (char& c : snippet) {
                                 if (c == '\n' || c == '\r') c = ' ';
                             }
@@ -449,9 +451,9 @@ int main(int, char**) {
                 ImGui::EndChild();
             }
 
-            ImGui::EndChild(); // LeftPanel
+            ImGui::EndChild(); // Panel derecho
             
-            // Right Panel (Graphs)
+            // Gráfica de líneas
             if (show_pie_chart || show_io_graph) {
                 ImGui::SameLine();
                 ImGui::BeginChild("RightPanel", ImVec2(right_panel_width, 0), true);
@@ -460,30 +462,35 @@ int main(int, char**) {
                     ImGui::Text("Ancho de Banda Utilizado");
                     ImGui::Separator();
                     
-                    double current_time = ImGui::GetTime();
-                    if (current_time - last_io_time >= 1.0) { // every 1 second
-                        unsigned long long current_total = global_stats.total_bytes;
-                        unsigned long long diff = 0;
-                        if (current_total >= last_total_bytes) diff = current_total - last_total_bytes;
-                        else diff = current_total;
+                    //calcular la tasa de bits por segundo
+                    double current_time = ImGui::GetTime(); //obtiene el tiempo total
+                    if (current_time - last_io_time >= 1.0) { // Resta el tiempo actual del ultimo registro (1 seg?)
+                        unsigned long long current_total = global_stats.total_bytes; //toma la cantidad de bytes capturados hasta ahora
+                        unsigned long long diff = 0; //inicia la variable que guardará los bytes recibidos en el ultimo segundo
+
+                        if (current_total >= last_total_bytes) {
+                            diff = current_total - last_total_bytes; //calcula cuantos bytes nuevos llegaton
+                        } else {
+                            diff = current_total; //si las estad
+                            }
                         
-                        // shift array
+                        // Desplazar los valores del array a la izquierda
                         for (int i = 0; i < 119; i++) {
                             io_graph_history[i] = io_graph_history[i + 1];
                         }
-                        io_graph_history[119] = ((float)diff) / 1024.0f; // KB/s
+                        io_graph_history[119] = ((float)diff) / 1024.0f; // conversion a KB/s
                         last_total_bytes = current_total;
                         last_io_time = current_time;
                     }
                     
-                    auto now = std::chrono::steady_clock::now();
+                    auto now = std::chrono::steady_clock::now(); //calculo del tiempo transcurrido en total
                     std::chrono::duration<double> elapsed = now - capture_start_time;
                     ImGui::g_CaptureElapsedTime = elapsed.count();
                     
                     ImGui::PlotLines("##iograph", io_graph_history, 120, 0, "KB/s", 0.0f, FLT_MAX, ImVec2(right_panel_width - 15, 120));
                     ImGui::Spacing();
                 }
-
+                //gráficadel pastel
                 if (show_pie_chart) {
                     ImGui::Text("Distribucion de Protocolos");
                     ImGui::Separator();
@@ -513,6 +520,8 @@ int main(int, char**) {
                         
                         float a_min = 0.0f;
                         float a_max = 0.0f;
+
+                        //mapear contadores a radianes
                         for (int i = 0; i < 5; i++) {
                             if (data[i] > 0) {
                                 a_max = a_min + (data[i] / total) * (3.1415926535f * 2.0f);
@@ -526,7 +535,7 @@ int main(int, char**) {
 
                         ImGui::Dummy(ImVec2(0, radius * 2 + 20));
                         
-                        // Legend
+                        //Mostrar la estadística con porcentajes exactos
                         for (int i = 0; i < 5; i++) {
                             if (data[i] > 0) {
                                 ImGui::PushStyleColor(ImGuiCol_Text, colors[i]);
@@ -537,7 +546,7 @@ int main(int, char**) {
                     } else {
                         ImGui::Text("No hay paquetes capturados.");
                     }
-                }
+                } //finalizar el dibujo del frame actual
                 ImGui::EndChild();
             }
         }
@@ -548,15 +557,17 @@ int main(int, char**) {
         g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
         g_pd3dDeviceContext->ClearRenderTargetView(g_mainRenderTargetView, clear_color_with_alpha);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        g_pSwapChain->Present(1, 0); 
+        g_pSwapChain->Present(1, 0); //sincronziacion activada
     }
 
+    //cierre del programa 
     detener_captura();
-    if (alldevs) pcap_freealldevs(alldevs);
+    if (alldevs) pcap_freealldevs(alldevs); //liberar dispositivos 
 
+    //destruir ventanas, estructura interna de ImGui y punteros a DirectX 11
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
-    ImGui::DestroyContext();
+    ImGui::DestroyContext(); 
     CleanupDeviceD3D();
     ::DestroyWindow(hwnd);
     ::UnregisterClassW(wc.lpszClassName, wc.hInstance);
@@ -566,10 +577,10 @@ int main(int, char**) {
 // Win32 message handler
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+    if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam)) //revisa si clickeaste dentro de imagen
         return true;
     switch (msg) {
-    case WM_SIZE:
+    case WM_SIZE: //reenderizado de imagen
         if (wParam == SIZE_MINIMIZED) return 0;
         g_ResizeWidth = (UINT)LOWORD(lParam);
         g_ResizeHeight = (UINT)HIWORD(lParam);
@@ -577,7 +588,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_SYSCOMMAND:
         if ((wParam & 0xfff0) == SC_KEYMENU) return 0;
         break;
-    case WM_DESTROY:
+    case WM_DESTROY: //manda mensaje para romper el bucle
         ::PostQuitMessage(0);
         return 0;
     }
