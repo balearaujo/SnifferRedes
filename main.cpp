@@ -62,7 +62,7 @@ void render_hex_view(const std::string& hex_str) {
     ImGui::TextUnformatted(hex_str.c_str());
 }
 
-void DrawPieChart(ImDrawList* draw_list, ImVec2 center, float radius, float start_angle, float end_angle, ImU32 color) //como se dibuja la grafica de pastel 
+void DrawPieChart(ImDrawList* draw_list, ImVec2 center, float radius, float start_angle, float end_angle, ImU32 color) { //como se dibuja la grafica de pastel 
     if (end_angle - start_angle <= 0.0f) return;
     draw_list->PathLineTo(center); 
     draw_list->PathArcTo(center, radius, start_angle, end_angle, 32); //angulo
@@ -256,10 +256,8 @@ int main(int, char**) {
             }
 
             ImGui::SameLine(); //menu oara seleccionar las vistas
-            if (ImGui::Button("Vistas ▼", ImVec2(100, 0))) {
-                ImGui::OpenPopup("menu_vistas");
-            }
-            if (ImGui::BeginPopup("menu_vistas")) {
+            if (ImGui::Button("Vistas")) ImGui::OpenPopup("vistas_popup");
+            if (ImGui::BeginPopup("vistas_popup")) {
                 ImGui::MenuItem("Grafico Pastel", NULL, &show_pie_chart);
                 ImGui::MenuItem("Grafico E/S", NULL, &show_io_graph);
                 ImGui::MenuItem("Trafico Vulnerable", NULL, &show_vulnerable_tab);
@@ -318,7 +316,7 @@ int main(int, char**) {
                 ImGui::TableSetupColumn("Tiempo");
                 ImGui::TableSetupColumn("IP Origen");
                 ImGui::TableSetupColumn("IP Destino");
-                ImGui::TableSetupColumn("Proto");
+                ImGui::TableSetupColumn("Protocolo");
                 ImGui::TableSetupColumn("Longitud");
                 ImGui::TableHeadersRow();
 
@@ -375,24 +373,27 @@ int main(int, char**) {
             // Area 2 & 3: Detalles
             ImGui::BeginChild("Area23", ImVec2(0, area23_h), false); 
             
-            ImGui::BeginChild("Area2", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, 0), true, ImGuiWindowFlags_HorizontalScrollbar); 
-            if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) { //revisar limites de la seleccion
-                if (monospace_font) ImGui::PushFont(monospace_font);
-                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].detalle.c_str()); //se formatea el texto con el indice elegido
-                if (monospace_font) ImGui::PopFont();
-            }
-            ImGui::EndChild();
+            {
+                std::lock_guard<std::mutex> lock(historial_mutex); // Lock to prevent vector reallocation crash
+                ImGui::BeginChild("Area2", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+                if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
+                    if (monospace_font) ImGui::PushFont(monospace_font);
+                    ImGui::TextUnformatted(historial_paquetes[selected_packet_index].detalle.c_str());
+                    if (monospace_font) ImGui::PopFont();
+                }
+                ImGui::EndChild();
 
-            ImGui::SameLine();
-            ImGui::BeginChild("Area3", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar); //volcado exadecimal
-            if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
-                if (monospace_font) ImGui::PushFont(monospace_font);
-                render_hex_view(historial_paquetes[selected_packet_index].raw_hex); //el hexadecimal sin convertid¿r
-                if (monospace_font) ImGui::PopFont();
-            } else {
-                ImGui::Text("Volcado Hexadecimal...");
+                ImGui::SameLine();
+                ImGui::BeginChild("Area3", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+                if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
+                    if (monospace_font) ImGui::PushFont(monospace_font);
+                    render_hex_view(historial_paquetes[selected_packet_index].raw_hex);
+                    if (monospace_font) ImGui::PopFont();
+                } else {
+                    ImGui::Text("Volcado Hexadecimal...");
+                }
+                ImGui::EndChild();
             }
-            ImGui::EndChild();
             ImGui::EndChild(); // Area23
 
             // Area 4: Trafico Vulnerable (Fondo del panel izquierdo)
@@ -409,7 +410,7 @@ int main(int, char**) {
                     ImGui::TableSetupColumn("Tiempo");
                     ImGui::TableSetupColumn("IP Origen");
                     ImGui::TableSetupColumn("IP Destino");
-                    ImGui::TableSetupColumn("Proto");
+                    ImGui::TableSetupColumn("Protocolo");
                     ImGui::TableSetupColumn("Longitud");
                     ImGui::TableSetupColumn("Cadena Extraida");
                     ImGui::TableHeadersRow();

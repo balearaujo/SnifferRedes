@@ -71,11 +71,12 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
     int es_ipv4 = 0;
     const u_char *ip_ptr = NULL;
 
-    char buffer_estructura[2048] = {0};
+    std::string buffer_estructura;
 
     // Ethernet parsing
     if (global_link_hdr_length == 14) { 
-        sprintf(buffer_estructura, 
+        char temp_eth[1024];
+        sprintf(temp_eth, 
             "=== CAPA DE ENLACE (Ethernet II) ===\r\n"
             "|- MAC Destino: %02X:%02X:%02X:%02X:%02X:%02X\r\n"
             "|- MAC Origen: %02X:%02X:%02X:%02X:%02X:%02X\r\n"
@@ -83,6 +84,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             packet[0], packet[1], packet[2], packet[3], packet[4], packet[5],
             packet[6], packet[7], packet[8], packet[9], packet[10], packet[11],
             packet[12], packet[13]);
+        buffer_estructura += temp_eth;
 
         if (packet[12] == 0x08 && packet[13] == 0x00) { // IPv4
             es_ipv4 = 1;
@@ -94,7 +96,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             pkt.id = historial_paquetes.size() + 1;
             pkt.src_ip = "MAC";
             pkt.dst_ip = "Broadcast";
-            strcat(buffer_estructura, "=== CAPA DE RED (ARP) ===\r\n");
+            buffer_estructura += "=== CAPA DE RED (ARP) ===\r\n";
             pkt.detalle = buffer_estructura;
             generar_hexdump(pkt, packet, pkthdr->caplen);
             historial_paquetes.push_back(pkt);
@@ -128,7 +130,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                              "|- Next Header: %d\r\n"
                              "|- Hop Limit: %d\r\n", 
                              version, traffic_class, flow_label, payload_len, ip6->next_header, ip6->hop_limit);
-            strcat(buffer_estructura, sub_ip6);
+            buffer_estructura += sub_ip6;
 
             const u_char* payload_ptr = packet + 14 + 40; // 40 ies estandar para IPv6 header TAM
             
@@ -143,10 +145,10 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 else if (sport == 80 || dport == 80) pkt.protocol_name = "HTTP";
                 char sub_tcp[512];
                 sprintf(sub_tcp, "\r\n=== CAPA DE TRANSPORTE (TCP) ===\r\n|- Puerto Origen: %d\r\n|- Puerto Destino: %d\r\n|- Numero Secuencia: %u\r\n|- Numero ACK: %u\r\n", sport, dport, ntohl(tcp_hdr->th_seq), ntohl(tcp_hdr->th_ack));
-                strcat(buffer_estructura, sub_tcp);
+                buffer_estructura += sub_tcp;
 
                 if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
-                    strcat(buffer_estructura, "\r\n[!] ADVERTENCIA: TRAFICO VULNERABLE (Texto Plano Detectado) [!]\r\n");
+                    buffer_estructura += "\r\n[!] ADVERTENCIA: TRAFICO VULNERABLE (Texto Plano Detectado) [!]\r\n";
                     pkt.is_vulnerable = true;
                     
                     int tcp_hdr_len = (tcp_hdr->th_off_x2 >> 4) * 4;
@@ -154,13 +156,13 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                     int p_len = payload_len - tcp_hdr_len;
                     if (p_len > 0) {
                         const u_char* payload_data = packet + 14 + 40 + tcp_hdr_len;
-                        strcat(buffer_estructura, "\r\n[PAYLOAD EXTRAIDO]\r\n");
+                        buffer_estructura += "\r\n[PAYLOAD EXTRAIDO]\r\n";
                         char temp_str[2] = {0};
                         for (int i = 0; i < p_len && (14 + 40 + tcp_hdr_len + i) < (int)pkthdr->caplen; i++) {
                             u_char c = payload_data[i];
-                            if (c >= 32 && c <= 126) { pkt.plain_text_payload += (char)c; temp_str[0] = (char)c; strcat(buffer_estructura, temp_str); }
-                            else if (c == '\n' || c == '\r') { pkt.plain_text_payload += (char)c; temp_str[0] = (char)c; strcat(buffer_estructura, temp_str); }
-                            else { pkt.plain_text_payload += "."; strcat(buffer_estructura, "."); }
+                            if (c >= 32 && c <= 126) { pkt.plain_text_payload += (char)c; buffer_estructura += (char)c; }
+                            else if (c == '\n' || c == '\r') { pkt.plain_text_payload += (char)c; buffer_estructura += (char)c; }
+                            else { pkt.plain_text_payload += "."; buffer_estructura += "."; }
                         }
                     }
                 }
@@ -174,11 +176,11 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 else if (sport == 1900 || dport == 1900) pkt.protocol_name = "SSDP";
                 char sub_udp[512];
                 sprintf(sub_udp, "\r\n=== CAPA DE TRANSPORTE (UDP) ===\r\n|- Puerto Origen: %d\r\n|- Puerto Destino: %d\r\n", sport, dport);
-                strcat(buffer_estructura, sub_udp);
+                buffer_estructura += sub_udp;
             } else if (ip6->next_header == 58) { // ICMPv6
                 global_stats.other--; global_stats.icmp++;
                 pkt.protocol_name = "ICMPv6";
-                strcat(buffer_estructura, "\r\n=== CAPA DE RED (ICMPv6) ===\r\n");
+                buffer_estructura += "\r\n=== CAPA DE RED (ICMPv6) ===\r\n";
             }
             pkt.detalle = buffer_estructura;
             generar_hexdump(pkt, packet, pkthdr->caplen);
@@ -220,7 +222,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                       "|- TTL: %d\r\n"
                       "|- Protocolo Interno: %d\r\n", 
                       ntohs(ip_hdr->ip_len), ip_hdr->ip_ttl, ip_hdr->ip_p);
-    strcat(buffer_estructura, sub_ipv4);
+    buffer_estructura += sub_ipv4;
 
     if (ip_hdr->ip_p == 6) { 
         global_stats.tcp++;
@@ -244,7 +246,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 "|- Numero Secuencia: %u\r\n"
                 "|- Numero ACK: %u\r\n", 
                 sport, dport, ntohl(tcp_hdr->th_seq), ntohl(tcp_hdr->th_ack));
-        strcat(buffer_estructura, sub_tcp);
+        buffer_estructura += sub_tcp;
 
         if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
             pkt.is_vulnerable = true;
@@ -255,13 +257,13 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             int payload_len = ntohs(ip_hdr->ip_len) - payload_offset;
             if (payload_len > 0) {
                 const u_char* payload_ptr = ip_ptr + payload_offset;
-                strcat(buffer_estructura, "\r\n[PAYLOAD EXTRAIDO]\r\n");
+                buffer_estructura += "\r\n[PAYLOAD EXTRAIDO]\r\n";
                 char temp_str[2] = {0};
                 for (int i = 0; i < payload_len; i++) {
                     u_char c = payload_ptr[i];
-                    if (c >= 32 && c <= 126) { pkt.plain_text_payload += (char)c; temp_str[0] = (char)c; strcat(buffer_estructura, temp_str); }
-                    else if (c == '\n' || c == '\r') { pkt.plain_text_payload += (char)c; temp_str[0] = (char)c; strcat(buffer_estructura, temp_str); }
-                    else { pkt.plain_text_payload += "."; strcat(buffer_estructura, "."); }
+                    if (c >= 32 && c <= 126) { pkt.plain_text_payload += (char)c; buffer_estructura += (char)c; }
+                    else if (c == '\n' || c == '\r') { pkt.plain_text_payload += (char)c; buffer_estructura += (char)c; }
+                    else { pkt.plain_text_payload += "."; buffer_estructura += "."; }
                 }
             }
         }
@@ -284,11 +286,11 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 "\r\n=== CAPA DE TRANSPORTE (UDP) ===\r\n"
                 "|- Puerto Origen: %d\r\n"
                 "|- Puerto Destino: %d\r\n", sport, dport);
-        strcat(buffer_estructura, sub_udp);
+        buffer_estructura += sub_udp;
     } else if (ip_hdr->ip_p == 1) { 
         global_stats.icmp++;
         pkt.protocol_name = "ICMP";
-        strcat(buffer_estructura, "\r\n=== CAPA DE RED (ICMP) ===\r\n");
+        buffer_estructura += "\r\n=== CAPA DE RED (ICMP) ===\r\n";
     } else {
         global_stats.other++;
         pkt.protocol_name = "IPv4 (Other)";
