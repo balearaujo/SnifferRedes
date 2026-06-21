@@ -62,7 +62,7 @@ void render_hex_view(const std::string& hex_str) {
     ImGui::TextUnformatted(hex_str.c_str());
 }
 
-void DrawPieChart(ImDrawList* draw_list, ImVec2 center, float radius, float start_angle, float end_angle, ImU32 color) //como se dibuja la grafica de pastel 
+void DrawPieChart(ImDrawList* draw_list, ImVec2 center, float radius, float start_angle, float end_angle, ImU32 color) { //como se dibuja la grafica de pastel 
     if (end_angle - start_angle <= 0.0f) return;
     draw_list->PathLineTo(center); 
     draw_list->PathArcTo(center, radius, start_angle, end_angle, 32); //angulo
@@ -256,10 +256,8 @@ int main(int, char**) {
             }
 
             ImGui::SameLine(); //menu oara seleccionar las vistas
-            if (ImGui::Button("Vistas ▼", ImVec2(100, 0))) {
-                ImGui::OpenPopup("menu_vistas");
-            }
-            if (ImGui::BeginPopup("menu_vistas")) {
+            if (ImGui::Button("Vistas")) ImGui::OpenPopup("vistas_popup");
+            if (ImGui::BeginPopup("vistas_popup")) {
                 ImGui::MenuItem("Grafico Pastel", NULL, &show_pie_chart);
                 ImGui::MenuItem("Grafico E/S", NULL, &show_io_graph);
                 ImGui::MenuItem("Trafico Vulnerable", NULL, &show_vulnerable_tab);
@@ -318,7 +316,7 @@ int main(int, char**) {
                 ImGui::TableSetupColumn("Tiempo");
                 ImGui::TableSetupColumn("IP Origen");
                 ImGui::TableSetupColumn("IP Destino");
-                ImGui::TableSetupColumn("Proto");
+                ImGui::TableSetupColumn("Protocolo");
                 ImGui::TableSetupColumn("Longitud");
                 ImGui::TableHeadersRow();
 
@@ -408,7 +406,7 @@ int main(int, char**) {
                     ImGui::TableSetupColumn("Tiempo");
                     ImGui::TableSetupColumn("IP Origen");
                     ImGui::TableSetupColumn("IP Destino");
-                    ImGui::TableSetupColumn("Proto");
+                    ImGui::TableSetupColumn("Protocolo");
                     ImGui::TableSetupColumn("Longitud");
                     ImGui::TableSetupColumn("Cadena Extraida");
                     ImGui::TableHeadersRow();
