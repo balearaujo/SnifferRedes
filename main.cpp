@@ -14,10 +14,10 @@
 #endif
 
 // Variables DirectX
-static ID3D11Device*            g_pd3dDevice = nullptr;
-static ID3D11DeviceContext*     g_pd3dDeviceContext = nullptr;
-static IDXGISwapChain*          g_pSwapChain = nullptr;
-static UINT                     g_ResizeWidth = 0, g_ResizeHeight = 0;
+static ID3D11Device* g_pd3dDevice = nullptr;
+static ID3D11DeviceContext*   g_pd3dDeviceContext = nullptr;
+static IDXGISwapChain*  g_pSwapChain = nullptr;
+static UINT  g_ResizeWidth = 0, g_ResizeHeight = 0;
 static ID3D11RenderTargetView*  g_mainRenderTargetView = nullptr;
 
 bool CreateDeviceD3D(HWND hWnd);
@@ -28,31 +28,33 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 // Estado de la aplicacion
 enum AppState { STATE_SELECT_INTERFACE, STATE_DASHBOARD };
-AppState currentState = STATE_SELECT_INTERFACE;
+AppState currentState = STATE_SELECT_INTERFACE; //empieza la aplicacióin en el estado de seleccionar interfaz
 
-// Variables de UI
-pcap_if_t *alldevs = nullptr;
-char errbuf[PCAP_ERRBUF_SIZE];
+pcap_if_t *alldevs = nullptr; //Interfaces detectadas por ncap
+char errbuf[PCAP_ERRBUF_SIZE]; //buffer para almacenar errores
+
+// Variables de UIDE LAS VENTANAS/PANELES
 bool show_pie_chart = true;
 bool show_io_graph = true;
 bool show_vulnerable_tab = true;
 
 namespace ImGui {
-    double g_CaptureElapsedTime = 0;
+    double g_CaptureElapsedTime = 0; //tiempo transcurrido
 }
 
-float io_graph_history[120] = {0};
+float io_graph_history[120] = {0}; //historial del ancho de banda
 double last_io_time = 0;
 unsigned long long last_total_bytes = 0;
 ImFont* monospace_font = nullptr;
-int selected_packet_index = -1;
+int selected_packet_index = -1; //indice del paquete seleccionado
 char filter_ip_src[64] = "";
 char filter_ip_dst[64] = "";
 char filter_port_src[16] = "";
 char filter_port_dst[16] = "";
-int filter_proto_index = 0;
-const char* proto_options[] = { "Todos", "TCP", "UDP", "ICMP", "ARP", "IPv6", "HTTP", "TLSv1.3", "DNS", "SSDP", "DHCP" };
+int filter_proto_index = 0; //indice para seleccionar los filtros de protocolo
+const char* proto_options[] = { "Todos", "TCP", "UDP", "ICMP", "ARP", "IPv6", "HTTP", "TLSv1.3", "DNS", "SSDP", "DHCP" }; //opciones desplegables de ptoyocolo
 
+//variables de capture.cpp
 extern volatile bool capture_running;
 extern std::chrono::steady_clock::time_point capture_start_time;
 
@@ -60,18 +62,18 @@ void render_hex_view(const std::string& hex_str) {
     ImGui::TextUnformatted(hex_str.c_str());
 }
 
-void DrawPieChart(ImDrawList* draw_list, ImVec2 center, float radius, float start_angle, float end_angle, ImU32 color) {
+void DrawPieChart(ImDrawList* draw_list, ImVec2 center, float radius, float start_angle, float end_angle, ImU32 color) //como se dibuja la grafica de pastel 
     if (end_angle - start_angle <= 0.0f) return;
-    draw_list->PathLineTo(center);
-    draw_list->PathArcTo(center, radius, start_angle, end_angle, 32);
-    draw_list->PathFillConvex(color);
+    draw_list->PathLineTo(center); 
+    draw_list->PathArcTo(center, radius, start_angle, end_angle, 32); //angulo
+    draw_list->PathFillConvex(color); //color que llena
 }
 
-void RenderPieChartPanel() {
+void RenderPieChartPanel() { 
     std::lock_guard<std::mutex> lock(historial_mutex);
     if (global_stats.total == 0) {
         ImGui::Text("Esperando trafico...");
-        return;
+        return; 
     }
     
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -108,7 +110,7 @@ void RenderPieChartPanel() {
     }
 }
 
-// Custom strstr case-insensitive
+// Comparador Case-Insensitive para los filtros de la UI
 bool contains_icase(const std::string& str, const std::string& substr) {
     auto it = std::search(
         str.begin(), str.end(),
@@ -155,6 +157,7 @@ int main(int, char**) {
         alldevs = nullptr;
     }
 
+    //aplicacion loop
     bool done = false;
     while (!done) {
         MSG msg;
@@ -165,6 +168,7 @@ int main(int, char**) {
         }
         if (done) break;
 
+        //si el usuario renderizo las ventanas 
         if (g_ResizeWidth != 0 && g_ResizeHeight != 0) {
             CleanupRenderTarget();
             g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight, DXGI_FORMAT_UNKNOWN, 0);
@@ -172,31 +176,33 @@ int main(int, char**) {
             CreateRenderTarget();
         }
 
+        //comenzar con un nuevo frame
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowPos(ImVec2(0, 0)); //ventana completa
         ImGui::SetNextWindowSize(io.DisplaySize);
         ImGui::Begin("Main", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-        if (currentState == STATE_SELECT_INTERFACE) {
+        if (currentState == STATE_SELECT_INTERFACE) { //selecciona la interfaz
             ImGui::Text("Selecciona la interfaz de red para capturar:");
             ImGui::Separator();
             if (!alldevs) {
-                ImGui::TextColored(ImVec4(1, 0, 0, 1), "Error al buscar interfaces de red.");
+                ImGui::TextColored(ImVec4(1, 0, 0, 1), "Error al buscar interfaces de red."); //validacion de encontrar las interfaces
             } else {
                 if (ImGui::BeginListBox("##interfaces", ImVec2(-FLT_MIN, -FLT_MIN))) {
                     for (pcap_if_t *d = alldevs; d != nullptr; d = d->next) {
                         char label[512];
-                        sprintf(label, "%s", d->description ? d->description : "Interfaz Desconocida");
-                        if (ImGui::Selectable(label)) {
-                            pcap_t *capdev = pcap_open_live(d->name, 65536, 1, 1, errbuf); 
+                        sprintf(label, "%s", d->description ? d->description : "Interfaz Desconocida"); //mostrar descripción
+                        if (ImGui::Selectable(label)) { //si el usuario selecciona
+                            pcap_t *capdev = pcap_open_live(d->name, 65536, 1, 1, errbuf); //guardar el usuario
                             if (capdev) {
                                 int link_hdr_type = pcap_datalink(capdev);
-                                int link_len = (link_hdr_type == DLT_EN10MB) ? 14 : ((link_hdr_type == DLT_NULL) ? 4 : 0);
-                                iniciar_captura(capdev, link_len);
-                                currentState = STATE_DASHBOARD;
+                                int link_len = (link_hdr_type == DLT_EN10MB) ? 14 : ((link_hdr_type == DLT_NULL) ? 4 : 0); //identifica tipo de encabezado
+                                //Ethernet-> 14 bytes      //Loopback 4 bytes   
+                                iniciar_captura(capdev, link_len); //iniciamos proceso
+                                currentState = STATE_DASHBOARD; //cambia de pantalla de muestra del dash borard
                             }
                         }
                     }
@@ -206,15 +212,15 @@ int main(int, char**) {
         } else if (currentState == STATE_DASHBOARD) {
             // Toolbar
             if (ImGui::Button("Volver Atras")) {
-                detener_captura();
-                historial_paquetes.clear();
+                detener_captura(); //detiene 
+                historial_paquetes.clear(); //limpiar el vector 
                 global_stats = {0};
-                currentState = STATE_SELECT_INTERFACE;
+                currentState = STATE_SELECT_INTERFACE; //volver a seleccionar la interfaz
             }
             ImGui::SameLine();
             
             if (capture_running) {
-                if (ImGui::Button("Pausar Captura", ImVec2(120, 0))) capture_running = false;
+                if (ImGui::Button("Pausar Captura", ImVec2(120, 0))) capture_running = false; //cambiamos el estado de la captura
             } else {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
                 if (ImGui::Button("Reanudar Captura", ImVec2(120, 0))) capture_running = true;
@@ -223,13 +229,13 @@ int main(int, char**) {
 
             ImGui::SameLine();
             if (ImGui::Button("Exportar CSV")) {
-                exportar_csv();
+                exportar_csv(); //llamar a funcion de exportar captura
             }
             ImGui::SameLine();
-            if (ImGui::Button("Reiniciar Captura")) {
+            if (ImGui::Button("Reiniciar Captura")) { //reimiciarcaptura
                 ImGui::OpenPopup("Confirmar Reinicio");
             }
-            if (ImGui::BeginPopupModal("Confirmar Reinicio", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (ImGui::BeginPopupModal("Confirmar Reinicio", NULL, ImGuiWindowFlags_AlwaysAutoResize)) { 
                 ImGui::Text("¿Estas seguro de que deseas borrar todos los paquetes?\nEsta accion no se puede deshacer.");
                 ImGui::Separator();
                 if (ImGui::Button("Si, Reiniciar", ImVec2(120, 0))) {
@@ -249,7 +255,7 @@ int main(int, char**) {
                 ImGui::EndPopup();
             }
 
-            ImGui::SameLine();
+            ImGui::SameLine(); //menu oara seleccionar las vistas
             if (ImGui::Button("Vistas ▼", ImVec2(100, 0))) {
                 ImGui::OpenPopup("menu_vistas");
             }

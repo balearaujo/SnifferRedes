@@ -130,8 +130,8 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                              version, traffic_class, flow_label, payload_len, ip6->next_header, ip6->hop_limit);
             strcat(buffer_estructura, sub_ip6);
 
-            const u_char* payload_ptr = packet + 14 + 40; // 40 is standard IPv6 header size
-
+            const u_char* payload_ptr = packet + 14 + 40; // 40 ies estandar para IPv6 header TAM
+            
             if (ip6->next_header == 6) { // TCP
                 global_stats.other--; global_stats.tcp++;
                 pkt.protocol_name = "TCP";
