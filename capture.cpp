@@ -322,13 +322,16 @@ void iniciar_captura(pcap_t *dev, int link_len) {
 }
 
 void detener_captura() {
-    if (!capture_running) return;
     capture_running = false;
     if (global_capdev) {
         pcap_breakloop(global_capdev);
     }
     if (capture_thread.joinable()) {
         capture_thread.join();
+    }
+    if (global_capdev) {
+        pcap_close(global_capdev);
+        global_capdev = NULL;
     }
 }
 
