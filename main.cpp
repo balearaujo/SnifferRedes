@@ -372,24 +372,27 @@ int main(int, char**) {
             // Area 2 & 3: Detalles
             ImGui::BeginChild("Area23", ImVec2(0, area23_h), false);
             
-            ImGui::BeginChild("Area2", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
-            if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
-                if (monospace_font) ImGui::PushFont(monospace_font);
-                ImGui::TextUnformatted(historial_paquetes[selected_packet_index].detalle.c_str());
-                if (monospace_font) ImGui::PopFont();
-            }
-            ImGui::EndChild();
+            {
+                std::lock_guard<std::mutex> lock(historial_mutex); // Lock to prevent vector reallocation crash
+                ImGui::BeginChild("Area2", ImVec2(ImGui::GetContentRegionAvail().x * 0.4f, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+                if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
+                    if (monospace_font) ImGui::PushFont(monospace_font);
+                    ImGui::TextUnformatted(historial_paquetes[selected_packet_index].detalle.c_str());
+                    if (monospace_font) ImGui::PopFont();
+                }
+                ImGui::EndChild();
 
-            ImGui::SameLine();
-            ImGui::BeginChild("Area3", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
-            if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
-                if (monospace_font) ImGui::PushFont(monospace_font);
-                render_hex_view(historial_paquetes[selected_packet_index].raw_hex);
-                if (monospace_font) ImGui::PopFont();
-            } else {
-                ImGui::Text("Volcado Hexadecimal...");
+                ImGui::SameLine();
+                ImGui::BeginChild("Area3", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
+                if (selected_packet_index >= 0 && selected_packet_index < (int)historial_paquetes.size()) {
+                    if (monospace_font) ImGui::PushFont(monospace_font);
+                    render_hex_view(historial_paquetes[selected_packet_index].raw_hex);
+                    if (monospace_font) ImGui::PopFont();
+                } else {
+                    ImGui::Text("Volcado Hexadecimal...");
+                }
+                ImGui::EndChild();
             }
-            ImGui::EndChild();
             ImGui::EndChild(); // Area23
 
             // Area 4: Trafico Vulnerable (Fondo del panel izquierdo)
