@@ -161,6 +161,9 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 char sub_tcp[512];
                 sprintf(sub_tcp, "\r\n=== CAPA DE TRANSPORTE (TCP) ===\r\n|- Puerto Origen: %d\r\n|- Puerto Destino: %d\r\n|- Numero Secuencia: %u\r\n|- Numero ACK: %u\r\n", sport, dport, ntohl(tcp_hdr->th_seq), ntohl(tcp_hdr->th_ack));
                 buffer_estructura += sub_tcp;
+                
+                if (sport == 21 || dport == 21) buffer_estructura += "|- Aplicacion: FTP\r\n";
+                else if (sport == 23 || dport == 23) buffer_estructura += "|- Aplicacion: Telnet\r\n";
 
                 //Extraccion de texto plano e identificacion de vulnerabulidades (HTTP, Telnet)
                 if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
@@ -276,6 +279,10 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 "|- Numero ACK: %u\r\n", 
                 sport, dport, ntohl(tcp_hdr->th_seq), ntohl(tcp_hdr->th_ack));
         buffer_estructura += sub_tcp;
+        
+        if (sport == 21 || dport == 21) buffer_estructura += "|- Aplicacion: FTP\r\n";
+        else if (sport == 23 || dport == 23) buffer_estructura += "|- Aplicacion: Telnet\r\n";
+
         //ANALIZADOR DE TEXTO PLANO 
         if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
             // Extract Payload
@@ -326,13 +333,23 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 "|- Puerto Origen: %d\r\n"
                 "|- Puerto Destino: %d\r\n", sport, dport);
         buffer_estructura += sub_udp;
-    } else if (ip_hdr->ip_p == 1) { //Protocolo ICMP
-        global_stats.icmp++;
-        pkt.protocol_name = "ICMP";
-        buffer_estructura += "\r\n=== CAPA DE RED (ICMP) ===\r\n";
+    } else if (ip_hdr->ip_p == 1) {
+            pkt.protocol_name = "ICMP";
+            global_stats.icmp++;
+            
+            // Extraer ICMP info básica
+            int ip_len = (ip_hdr->ip_v_hl & 0x0F) * 4;
+            const u_char* icmp_header = (const u_char*)ip_hdr + ip_len;
+            if (pkthdr->caplen >= 14 + ip_len + 2) {
+                int type = icmp_header[0];
+                int code = icmp_header[1];
+                char sub_icmp[128];
+                snprintf(sub_icmp, sizeof(sub_icmp), "=== CAPA DE RED (ICMP) ===\r\n| - Tipo: %d\r\n| - Codigo: %d\r\n", type, code);
+                buffer_estructura += sub_icmp;
+            }
     } else {
-        global_stats.other++;
-        pkt.protocol_name = "IPv4 (Other)";
+            pkt.protocol_name = "IPv4 (Other)";
+            global_stats.other++;
     }
 
     //Almacenamiento final

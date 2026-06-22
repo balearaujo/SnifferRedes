@@ -52,7 +52,7 @@ char filter_ip_dst[64] = "";
 char filter_port_src[16] = "";
 char filter_port_dst[16] = "";
 int filter_proto_index = 0; //indice para seleccionar los filtros de protocolo
-const char* proto_options[] = { "Todos", "TCP", "UDP", "ICMP", "ARP", "IPv6", "HTTP", "TLSv1.3", "DNS", "SSDP", "DHCP" }; //opciones desplegables de ptoyocolo
+const char* proto_options[] = { "Todos", "TCP", "UDP", "ICMP", "ICMPv6", "ARP", "IPv6", "IPv4 (Other)", "HTTP", "TLSv1.3", "DNS", "SSDP", "DHCP", "FTP", "Telnet", "Ethernet", "Unknown" }; //opciones desplegables de ptoyocolo
 
 //variables de capture.cpp
 extern volatile bool capture_running;
