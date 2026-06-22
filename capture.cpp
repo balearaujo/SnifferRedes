@@ -348,7 +348,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 buffer_estructura += sub_icmp;
             }
     } else {
-            pkt.protocol_name = "IPv4 (Otro)";
+            pkt.protocol_name = "IPv4";
             global_stats.other++;
     }
 
