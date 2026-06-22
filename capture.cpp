@@ -11,23 +11,27 @@
 
 std::vector<PacketMemory> historial_paquetes;
 std::mutex historial_mutex;
-ProtocolStats global_stats = {0};
+ProtocolStats global_stats = {0}; //estadisticas que empiezan en 0
 
-pcap_t *global_capdev = NULL;
+pcap_t *global_capdev = NULL; //Puntero al dispositio activo
 int global_link_hdr_length = 0;
 volatile bool capture_running = false;
 std::thread capture_thread;
 std::chrono::steady_clock::time_point capture_start_time;
 
-void generar_hexdump(PacketMemory& pkt, const u_char* packet, int caplen) {
+void generar_hexdump(PacketMemory& pkt, const u_char* packet, int caplen) { //generar hexdump
+    //Se encarga de transdormar los bytes crudos en hexadecimal y ascci
     pkt.raw_hex = "Frame " + std::to_string(pkt.id) + ": " + std::to_string(pkt.length) + " bytes on wire\r\n\r\nHEXDUMP (Hex | ASCII):\r\n";
+    //Inicializa la cadena de texto con el ID del paquete y su tam real
     char temp[64];
-    for (int i = 0; i < caplen; i += 16) {
-        sprintf(temp, "%04X  ", i);
-        pkt.raw_hex += temp;
-        for (int j = 0; j < 16; j++) {
-            if (i + j < caplen) {
-                sprintf(temp, "%02X ", packet[i + j]);
+
+    //Bucle principal: va procesando el paquete en bloques de 16 bytes por fila
+    for (int i = 0; i < caplen; i += 16) { //
+        sprintf(temp, "%04X  ", i); //imprime el offset
+        pkt.raw_hex += temp; 
+        for (int j = 0; j < 16; j++) {//Bloque decimal: Imprime los 16 bytes de la fila
+            if (i + j < caplen) { //si el byte existe dentro de lo capturado
+                sprintf(temp, "%02X ", packet[i + j]);  //espacio de rrelleno por si termino a la mitad
                 pkt.raw_hex += temp;
             } else {
                 pkt.raw_hex += "   ";
@@ -35,28 +39,30 @@ void generar_hexdump(PacketMemory& pkt, const u_char* packet, int caplen) {
             if (j == 7) pkt.raw_hex += " ";
         }
         pkt.raw_hex += " | ";
-        for (int j = 0; j < 16; j++) {
+        for (int j = 0; j < 16; j++) { //Bloque ASCCI: representa los mismos 16 bytes pero legibles ASCCI
             if (i + j < caplen) {
-                u_char c = packet[i + j];
-                if (c >= 32 && c <= 126) {
+                u_char c = packet[i + j]; //Si el caracteres imprimible esta dentro de ASCCI
+                if (c >= 32 && c <= 126) { //32 a 126
                     pkt.raw_hex += (char)c;
                 } else {
-                    pkt.raw_hex += ".";
+                    pkt.raw_hex += "."; //sino son imprimibles es un punto (Caracteres ASCII de control)
                 }
             }
         }
-        pkt.raw_hex += "\r\n";
+        pkt.raw_hex += "\r\n"; //salto de linea para siguiente fila de 16 bytes
     }
 }
-
+//DEFINIR 
 void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packet) {
-    if (!capture_running) return;
+    if (!capture_running) return; //sino esta en captura volver
 
+    //calcula segundos transcurridos
     double ts = std::chrono::duration<double>(std::chrono::steady_clock::now() - capture_start_time).count();
 
-    std::lock_guard<std::mutex> lock(historial_mutex);
-    global_stats.total_bytes += pkthdr->len;
+    std::lock_guard<std::mutex> lock(historial_mutex); //bloqueo de segyrudad
+    global_stats.total_bytes += pkthdr->len; //acumula el peso total de bytes
     
+    //Instancia de un objeto temporal para llenar los campos de la interfaz
     PacketMemory pkt;
     pkt.timestamp = ts;
     pkt.length = pkthdr->len;
@@ -69,13 +75,14 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
     pkt.plain_text_payload = "";
 
     int es_ipv4 = 0;
-    const u_char *ip_ptr = NULL;
+    const u_char *ip_ptr = NULL; //inicio de la capade red(IP)
 
-    std::string buffer_estructura;
+    std::string buffer_estructura; //string temporal
 
     // Ethernet parsing
     if (global_link_hdr_length == 14) { 
         char temp_eth[1024];
+        //Extrae las MAC de destino (0-5), de origen (6-11), y EtherType(bytes 12-13)
         sprintf(temp_eth, 
             "=== CAPA DE ENLACE (Ethernet II) ===\r\n"
             "|- MAC Destino: %02X:%02X:%02X:%02X:%02X:%02X\r\n"
@@ -86,9 +93,10 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             packet[12], packet[13]);
         buffer_estructura += temp_eth;
 
+        //Revisa cual es el ethertype
         if (packet[12] == 0x08 && packet[13] == 0x00) { // IPv4
             es_ipv4 = 1;
-            ip_ptr = packet + 14;
+            ip_ptr = packet + 14; //Marcamos la bandera y movemos el puntero ip 14 bytes adelante
         } else if (packet[12] == 0x08 && packet[13] == 0x06) { // ARP
             global_stats.arp++;
             global_stats.total++;
@@ -99,7 +107,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             buffer_estructura += "=== CAPA DE RED (ARP) ===\r\n";
             pkt.detalle = buffer_estructura;
             generar_hexdump(pkt, packet, pkthdr->caplen);
-            historial_paquetes.push_back(pkt);
+            historial_paquetes.push_back(pkt); //ARP no encapsula IP y salimos 
             return;
         } else if (packet[12] == 0x86 && packet[13] == 0xDD) { // IPv6
             global_stats.other++; 
@@ -107,14 +115,18 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             pkt.protocol_name = "IPv6";
             pkt.id = historial_paquetes.size() + 1;
             
+            //Mapeamos al formato de IPv6 y se salta 14 bytes de ethernet
             struct ipv6_header *ip6 = (struct ipv6_header *)(packet + 14);
             char src6[INET6_ADDRSTRLEN];
             char dst6[INET6_ADDRSTRLEN];
+
+            //Inet_ntop convierte una cadena binaria de ip a formato legible para humanos
             inet_ntop(AF_INET6, ip6->src, src6, INET6_ADDRSTRLEN);
             inet_ntop(AF_INET6, ip6->dst, dst6, INET6_ADDRSTRLEN);
             pkt.src_ip = src6;
             pkt.dst_ip = dst6;
 
+            //Desenreda campos específicos mediante máscaras de bits y conversion de formato
             int payload_len = ntohs(ip6->payload_len);
             uint32_t vtf = ntohl(ip6->vtf);
             int version = (vtf >> 28) & 0x0F;
@@ -134,6 +146,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
 
             const u_char* payload_ptr = packet + 14 + 40; // 40 ies estandar para IPv6 header TAM
             
+            //subprotocolo en ipv6 
             if (ip6->next_header == 6) { // TCP
                 global_stats.other--; global_stats.tcp++;
                 pkt.protocol_name = "TCP";
@@ -141,12 +154,15 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 uint16_t sport = ntohs(tcp_hdr->th_sport);
                 uint16_t dport = ntohs(tcp_hdr->th_dport);
                 pkt.src_port = sport; pkt.dst_port = dport;
+
+                //clasificacion básica por puetos conocidos
                 if (sport == 443 || dport == 443) pkt.protocol_name = "TLSv1.3";
                 else if (sport == 80 || dport == 80) pkt.protocol_name = "HTTP";
                 char sub_tcp[512];
                 sprintf(sub_tcp, "\r\n=== CAPA DE TRANSPORTE (TCP) ===\r\n|- Puerto Origen: %d\r\n|- Puerto Destino: %d\r\n|- Numero Secuencia: %u\r\n|- Numero ACK: %u\r\n", sport, dport, ntohl(tcp_hdr->th_seq), ntohl(tcp_hdr->th_ack));
                 buffer_estructura += sub_tcp;
 
+                //Extraccion de texto plano e identificacion de vulnerabulidades (HTTP, Telnet)
                 if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
                     int tcp_hdr_len = (tcp_hdr->th_off_x2 >> 4) * 4;
                     int payload_offset = 40 + tcp_hdr_len;
@@ -154,6 +170,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                     if (p_len > 0) {
                         const u_char* payload_data = packet + 14 + 40 + tcp_hdr_len;
                         buffer_estructura += "\r\n[PAYLOAD EXTRAIDO]\r\n";
+                        //Ciclo que extrae los caracteres y los pasa a texto plano
                         for (int i = 0; i < p_len && (14 + 40 + tcp_hdr_len + i) < (int)pkthdr->caplen; i++) {
                             u_char c = payload_data[i];
                             if (c >= 32 && c <= 126) { pkt.plain_text_payload += (char)c; buffer_estructura += (char)c; }
@@ -195,6 +212,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             historial_paquetes.push_back(pkt);
             return;
         } else {
+            //No coincide con Ipv6, ni IPb4 ni ARP se consifera fenerico
             global_stats.other++;
             global_stats.total++;
             pkt.protocol_name = "Ethernet";
@@ -204,14 +222,14 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             historial_paquetes.push_back(pkt);
             return;
         }
-    } else if (global_link_hdr_length == 4) { 
+    } else if (global_link_hdr_length == 4) { //caso especial de adapadores NULL o Loopback en lugar de ethernet
         if (packet[0] == 2 || packet[0] == 24 || packet[2] == 0x08) {
             es_ipv4 = 1;
             ip_ptr = packet + 4;
         }
     }
 
-    if (!es_ipv4 || !ip_ptr) return;
+    if (!es_ipv4 || !ip_ptr) return; //si traes ecaluar las capas de enlace NO tiene trafico
 
     struct ip_header *ip_hdr = (struct ip_header *)ip_ptr;
     
@@ -232,9 +250,12 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                     ntohs(ip_hdr->ip_len), ip_hdr->ip_ttl, ip_hdr->ip_p);
     buffer_estructura += sub_ipv4;
 
-    if (ip_hdr->ip_p == 6) { 
+    //Transporte en Ipv6 
+    if (ip_hdr->ip_p == 6) { //protocolo tco
         global_stats.tcp++;
         pkt.protocol_name = "TCP";
+
+        //mueve el puntero para saltarse el encambezado IP dinámico
         const u_char *tcp_packet_ptr = ip_ptr + ip_hdr_len;
         struct tcp_header *tcp_hdr = (struct tcp_header *)tcp_packet_ptr;
 
@@ -255,7 +276,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 "|- Numero ACK: %u\r\n", 
                 sport, dport, ntohl(tcp_hdr->th_seq), ntohl(tcp_hdr->th_ack));
         buffer_estructura += sub_tcp;
-
+        //ANALIZADOR DE TEXTO PLANO 
         if (sport == 80 || dport == 80 || sport == 21 || dport == 21 || sport == 23 || dport == 23) {
             // Extract Payload
             int tcp_hdr_len = (tcp_hdr->th_off_x2 >> 4) * 4;
@@ -285,7 +306,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
             }
         }
         
-    } else if (ip_hdr->ip_p == 17) { 
+    } else if (ip_hdr->ip_p == 17) { //Protocolo UDP
         global_stats.udp++;
         pkt.protocol_name = "UDP";
         const u_char *udp_packet_ptr = ip_ptr + ip_hdr_len;
@@ -294,6 +315,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
         pkt.src_port = sport;
         pkt.dst_port = dport;
         
+        //Mapeo crudo de puertos en memoria
         if (sport == 53 || dport == 53) pkt.protocol_name = "DNS";
         else if (sport == 1900 || dport == 1900) pkt.protocol_name = "SSDP";
         else if (sport == 67 || dport == 68 || sport == 68 || dport == 67) pkt.protocol_name = "DHCP";
@@ -304,7 +326,7 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
                 "|- Puerto Origen: %d\r\n"
                 "|- Puerto Destino: %d\r\n", sport, dport);
         buffer_estructura += sub_udp;
-    } else if (ip_hdr->ip_p == 1) { 
+    } else if (ip_hdr->ip_p == 1) { //Protocolo ICMP
         global_stats.icmp++;
         pkt.protocol_name = "ICMP";
         buffer_estructura += "\r\n=== CAPA DE RED (ICMP) ===\r\n";
@@ -313,10 +335,11 @@ void call_me(u_char *user, const struct pcap_pkthdr *pkthdr, const u_char *packe
         pkt.protocol_name = "IPv4 (Other)";
     }
 
+    //Almacenamiento final
     global_stats.total++;
 
-    pkt.id = historial_paquetes.size() + 1;
-    pkt.detalle = buffer_estructura;
+    pkt.id = historial_paquetes.size() + 1; //Asigna un numero mas
+    pkt.detalle = buffer_estructura; //Añade el paquete
 
     generar_hexdump(pkt, packet, pkthdr->caplen);
 
@@ -330,12 +353,12 @@ void HiloCaptura() {
 }
 
 void iniciar_captura(pcap_t *dev, int link_len) {
-    if (capture_running) return;
-    global_capdev = dev;
+    if (capture_running) return; //revisa si esta corriendo 
+    global_capdev = dev; //
     global_link_hdr_length = link_len;
     capture_start_time = std::chrono::steady_clock::now();
     capture_running = true;
-    capture_thread = std::thread(HiloCaptura);
+    capture_thread = std::thread(HiloCaptura);//llama al hilo
 }
 
 void detener_captura() {
